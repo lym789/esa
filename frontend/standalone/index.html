@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JadeFlow AI 企业支持智能体</title>
+  <style>
+    :root{--cream:#f7ecd0;--glass-border:rgba(230,255,238,.34)}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%}
+    body{color:#eefbf0;background:#061713;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .dashboard-page{position:relative;width:100vw;height:100vh;min-width:1200px;min-height:720px;overflow:hidden;background:#06221c}
+    .background-image{position:absolute;inset:0;z-index:0;background:url("./jade-river-bg.png") center/cover no-repeat}
+    .background-depth{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,rgba(0,23,18,.58) 0%,rgba(0,23,18,.34) 17%,rgba(0,23,18,.08) 43%,rgba(0,23,18,.04) 100%),radial-gradient(circle at 73% 39%,rgba(255,255,255,.18),transparent 16%),linear-gradient(180deg,rgba(0,0,0,.06),rgba(0,0,0,.20))}
+    .background-shimmer{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:.45;background:radial-gradient(circle at 72% 40%,rgba(255,255,255,.15),transparent 14%),linear-gradient(120deg,transparent 0%,rgba(255,255,255,.10) 38%,transparent 54%);mix-blend-mode:screen;animation:softShimmer 8s ease-in-out infinite alternate}
+    @keyframes softShimmer{0%{transform:translate3d(-1.2%,-.6%,0);opacity:.28}100%{transform:translate3d(1.4%,.8%,0);opacity:.52}}
+    .glass{position:relative;overflow:hidden;border:1px solid var(--glass-border);background:linear-gradient(145deg,rgba(237,255,243,.22),rgba(113,211,173,.10) 48%,rgba(255,255,255,.06)),radial-gradient(circle at 24% 16%,rgba(255,255,255,.34),transparent 24%);box-shadow:0 24px 60px rgba(0,25,20,.26),inset 0 1px 0 rgba(255,255,255,.48),inset 0 -18px 32px rgba(36,168,124,.08);backdrop-filter:blur(20px) saturate(160%)}
+    .glass:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(120deg,transparent 0%,rgba(255,255,255,.18) 30%,transparent 48%),radial-gradient(circle at 18% 0%,rgba(255,255,255,.18),transparent 24%);opacity:.75}
+    .sidebar{position:absolute;z-index:5;left:22px;top:22px;bottom:22px;width:260px;border-radius:22px;padding:26px 16px;display:flex;flex-direction:column}
+    .logo-row{position:relative;z-index:10;display:flex;align-items:center;justify-content:center;gap:13px}
+    .logo-img{width:52px;height:52px;object-fit:contain;filter:drop-shadow(0 12px 22px rgba(0,40,33,.36))}
+    .brand-text{font-family:Georgia,"Times New Roman",serif;color:var(--cream);font-size:26px;font-weight:650;letter-spacing:-.03em}
+    .enterprise-pill{position:relative;z-index:10;margin:10px auto 0;width:fit-content;border-radius:999px;border:1px solid rgba(240,255,244,.38);background:rgba(255,255,255,.10);padding:4px 16px;color:#e8f8ec;font-size:13px}
+    .nav{position:relative;z-index:10;margin-top:38px;display:grid;gap:14px}
+    .nav-button{display:flex;align-items:center;gap:14px;width:100%;min-height:48px;border:1px solid transparent;border-radius:12px;padding:0 16px;background:transparent;color:#e6f6ec;text-align:left;font-size:15.5px}
+    .nav-button.active{background:linear-gradient(135deg,rgba(235,255,238,.22),rgba(80,210,166,.20)),radial-gradient(circle at 100% 100%,rgba(255,255,255,.24),transparent 30%);border-color:rgba(236,255,240,.42);box-shadow:0 12px 28px rgba(31,164,126,.23),inset 0 1px 0 rgba(255,255,255,.46)}
+    .user-area{position:relative;z-index:10;margin-top:auto;border-top:1px solid rgba(255,255,255,.18);padding-top:20px;display:flex;align-items:center;gap:12px}
+    .avatar{display:grid;place-items:center;height:42px;width:42px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12)}
+    .sidebar-actions{position:relative;z-index:10;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:28px}
+    .sidebar-action{height:50px;border-radius:10px;border:1px solid rgba(235,255,240,.24);background:rgba(255,255,255,.06);color:#eaffef}
+    .main-area{position:absolute;z-index:5;left:324px;right:24px;top:24px;bottom:24px;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding-right:4px}
+    .main-area::-webkit-scrollbar{width:8px}.main-area::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(230,255,238,.22)}
+    .topbar{height:58px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+    .search-box{height:100%;width:min(610px,46vw);border-radius:15px;display:flex;align-items:center;gap:14px;padding:0 22px;color:#e8f8ec}
+    .top-spacer{flex:1}.top-chip{height:100%;border-radius:15px;display:flex;align-items:center;justify-content:center;padding:0 22px;white-space:nowrap;gap:9px}.notification-button{width:58px;padding:0}
+    .hero{width:720px;max-width:64vw;margin-top:68px}
+    .hero-title{margin:0;font-family:Georgia,"Times New Roman",serif;color:var(--cream);font-size:clamp(46px,4.1vw,64px);line-height:1.02;letter-spacing:-.035em;text-shadow:0 2px 22px rgba(0,0,0,.25)}
+    .hero-subtitle{margin-top:14px;color:var(--cream);font-size:clamp(26px,2.35vw,36px);line-height:1.2;font-weight:700;text-shadow:0 2px 20px rgba(0,0,0,.28)}
+    .hero-desc{margin-top:20px;max-width:670px;color:#dcefe3;font-size:16px;line-height:1.7;text-shadow:0 2px 12px rgba(0,0,0,.32)}
+    .ask-button{margin-top:24px;height:46px;width:255px;border-radius:999px;border:1px solid rgba(236,255,240,.35);background:linear-gradient(135deg,rgba(240,255,243,.18),rgba(113,211,173,.12));color:#f1f8ec;display:flex;align-items:center;justify-content:space-between;padding:0 18px 0 20px;backdrop-filter:blur(18px);box-shadow:inset 0 1px 0 rgba(255,255,255,.36)}
+    .stats-grid{margin-top:78px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;flex-shrink:0}
+    .stat-card{min-height:118px;border-radius:17px;padding:20px 18px}.stat-inner{position:relative;z-index:10;display:flex;align-items:center;gap:16px}.stat-icon{width:70px;height:70px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 13px 20px rgba(0,36,28,.28))}
+    .stat-title{color:#e8f8ec;font-size:13.5px}.stat-value{margin-top:7px;color:var(--cream);font-family:Georgia,"Times New Roman",serif;font-size:31px;line-height:1}.stat-delta{margin-top:9px;color:#70efae;font-size:12px}
+    .feature-grid{margin-top:20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;flex-shrink:0}
+    .feature-card{min-height:132px;border-radius:17px;padding:22px 20px}
+    .feature-inner{position:relative;z-index:10;display:flex;height:100%;align-items:flex-start;gap:14px}
+    .feature-icon{width:58px;height:58px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 13px 20px rgba(0,36,28,.24))}
+    .feature-title{color:var(--cream);font-size:18px;font-weight:700;line-height:1.15}.feature-desc{margin-top:10px;color:#d8ece0;font-size:14px;line-height:1.6}.feature-arrow{position:absolute;right:2px;bottom:0;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;border:1px solid rgba(236,255,240,.22);background:rgba(255,255,255,.10);color:#f1f7e8;font-size:20px}
+    .bottom-notice{margin:18px auto 0;width:min(505px,90%);min-height:36px;border-radius:999px;display:flex;align-items:center;gap:12px;padding:8px 16px;color:#dcf0e4;font-size:13px;flex-shrink:0}
+    .ripple-layer{position:absolute;inset:0;z-index:4;pointer-events:none}.ripple{position:absolute;width:340px;height:340px;border-radius:50%;transform:translate(-50%,-50%);animation:rippleExpand 2200ms ease-out forwards}.ripple:before,.ripple:after{content:"";position:absolute;inset:0;border-radius:inherit}.ripple:before{border:2px solid rgba(238,255,248,.58);box-shadow:0 0 0 1px rgba(210,250,229,.10),inset 0 0 20px rgba(255,255,255,.06)}.ripple:after{inset:16%;border:1px solid rgba(217,246,226,.36)}
+    @keyframes rippleExpand{0%{transform:translate(-50%,-50%) scale(.06);opacity:.75}58%{opacity:.28}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+    @media(max-height:860px){.hero{margin-top:44px}.stats-grid{margin-top:48px}.stat-card{min-height:104px;padding:16px}.stat-icon{width:58px;height:58px}.stat-value{font-size:26px}.feature-card{min-height:112px;padding:16px}.feature-icon{width:46px;height:46px}.feature-desc{font-size:12px;line-height:1.5}.bottom-notice{margin-top:14px}}
+  </style>
+</head>
+<body>
+  <main class="dashboard-page" id="page">
+    <div class="background-image"></div><div class="background-depth"></div><div class="background-shimmer"></div><div class="ripple-layer" id="rippleLayer"></div>
+    <aside class="sidebar glass">
+      <div class="logo-row"><img src="./icons/logo.png" class="logo-img" alt=""><h1 class="brand-text">JadeFlow AI</h1></div>
+      <div class="enterprise-pill">企业版</div>
+      <nav class="nav"><button class="nav-button active">⌂ 总览</button><button class="nav-button">▦ 知识库</button><button class="nav-button">▣ 文档</button><button class="nav-button">▤ 工单</button><button class="nav-button">▣ 审批</button><button class="nav-button">⌁ 智能体追踪</button><button class="nav-button">▥ 数据分析</button><button class="nav-button">⌘ 系统集成</button><button class="nav-button">⚙ 设置</button></nav>
+      <div class="user-area"><div class="avatar">LY</div><div><div style="font-size:14px;font-weight:600">李云龙</div><div style="font-size:12px;color:#cce4d7">管理员</div></div><span style="margin-left:auto">⌄</span></div>
+      <div class="sidebar-actions"><button class="sidebar-action">☼</button><button class="sidebar-action">♢</button><button class="sidebar-action">↪</button></div>
+    </aside>
+    <section class="main-area">
+      <header class="topbar"><div class="search-box glass">⌕ 搜索知识、工单、文档... <span style="margin-left:auto;border-radius:6px;background:rgba(0,0,0,.1);padding:3px 8px">⌘ K</span></div><div class="top-spacer"></div><div class="top-chip glass"><span style="height:10px;width:10px;border-radius:50%;background:#45ef75"></span>AI 助手在线</div><button class="top-chip notification-button glass">?</button><button class="top-chip notification-button glass" style="position:relative">♢<span style="position:absolute;right:6px;top:6px;display:grid;height:20px;width:20px;place-items:center;border-radius:999px;background:#7df2bd;color:#07533f;font-size:10px;font-weight:700">3</span></button></header>
+      <section class="hero"><h2 class="hero-title">企业支持智能体</h2><h3 class="hero-subtitle">企业知识库与智能工单处理 AI 助手</h3><p class="hero-desc">融合企业知识与业务流程的智能助手，助力高效服务与决策。</p><button class="ask-button"><span>✦ 询问 AI 助手</span><span>→</span></button></section>
+      <section class="stats-grid">
+        <article class="stat-card glass"><div class="stat-inner"><img src="./icons/knowledge-articles.png" class="stat-icon" alt=""><div><div class="stat-title">知识文章</div><div class="stat-value">12,842</div><div class="stat-delta">↗ 较近 30 天增长 12.6%</div></div></div></article>
+        <article class="stat-card glass"><div class="stat-inner"><img src="./icons/open-tickets-stat.png" class="stat-icon" alt=""><div><div class="stat-title">待处理工单</div><div class="stat-value">1,256</div><div class="stat-delta">↘ 较近 30 天下降 8.4%</div></div></div></article>
+        <article class="stat-card glass"><div class="stat-inner"><img src="./icons/resolved-tickets-stat.png" class="stat-icon" alt=""><div><div class="stat-title">已解决工单</div><div class="stat-value">8,932</div><div class="stat-delta">↗ 较近 30 天增长 18.7%</div></div></div></article>
+        <article class="stat-card glass"><div class="stat-inner"><img src="./icons/avg-resolution-time.png" class="stat-icon" alt=""><div><div class="stat-title">平均解决时长</div><div class="stat-value">4.2h</div><div class="stat-delta">↘ 较近 30 天缩短 16.3%</div></div></div></article>
+      </section>
+      <section class="feature-grid">
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/knowledge-base.png" class="feature-icon" alt=""><div><div class="feature-title">知识库</div><div class="feature-desc">构建与管理企业知识库，支持 AI 精准问答与检索。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/documents.png" class="feature-icon" alt=""><div><div class="feature-title">文档</div><div class="feature-desc">集中管理文档与资源，支持版本、权限与协作。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/tickets.png" class="feature-icon" alt=""><div><div class="feature-title">工单</div><div class="feature-desc">智能工单管理与自动分派，提升响应与处理效率。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/approvals.png" class="feature-icon" alt=""><div><div class="feature-title">审批</div><div class="feature-desc">流程审批与合规管理，确保业务规范与可追溯。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/agent-trace.png" class="feature-icon" alt=""><div><div class="feature-title">智能体追踪</div><div class="feature-desc">追踪 AI 决策过程与执行轨迹，提升透明与可解释性。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/analytics.png" class="feature-icon" alt=""><div><div class="feature-title">数据分析</div><div class="feature-desc">多维数据分析与洞察，驱动服务与业务持续优化。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/integrations.png" class="feature-icon" alt=""><div><div class="feature-title">系统集成</div><div class="feature-desc">连接企业系统与第三方应用，打通数据与流程。</div></div><span class="feature-arrow">›</span></div></button>
+        <button class="feature-card glass"><div class="feature-inner"><img src="./icons/settings.png" class="feature-icon" alt=""><div><div class="feature-title">设置</div><div class="feature-desc">配置 AI 助手与系统策略，管理权限与安全。</div></div><span class="feature-arrow">›</span></div></button>
+      </section>
+      <div class="bottom-notice glass">▣ 企业级安全防护 · 数据加密存储 · 权限精细控制 · 审计日志完整 <span style="margin-left:auto">›</span></div>
+    </section>
+  </main>
+  <script>
+    const page=document.getElementById("page"),layer=document.getElementById("rippleLayer");
+    page.addEventListener("click",event=>{const rect=page.getBoundingClientRect();const ripple=document.createElement("span");ripple.className="ripple";ripple.style.left=event.clientX-rect.left+"px";ripple.style.top=event.clientY-rect.top+"px";layer.appendChild(ripple);setTimeout(()=>ripple.remove(),2300)})
+  </script>
+</body>
+</html>
