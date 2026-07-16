@@ -15,6 +15,7 @@ from app.services.prompt_templates import (
     build_risk_assessment_messages,
     build_ticket_draft_messages,
 )
+from app.services.deadline import deadline_budget
 
 
 def test_llm_settings_default_to_disabled_and_safe_values():
@@ -28,6 +29,7 @@ def test_llm_settings_default_to_disabled_and_safe_values():
     assert settings.llm_timeout_seconds == 30
     assert settings.llm_max_retries == 2
     assert settings.llm_enable_thinking is None
+    assert settings.request_deadline_seconds == 30
     assert settings.model_circuit_failure_threshold == 5
     assert settings.model_circuit_recovery_seconds == 30
     assert settings.llm_max_concurrency == 20
@@ -99,6 +101,7 @@ def test_openai_client_omits_thinking_parameter_when_not_configured():
     client.generate_json([LLMMessage(role="user", content="输出 JSON")])
 
     assert "extra_body" not in captured
+    assert captured["timeout"] == 30
 
 
 def test_openai_client_passes_disabled_thinking_to_compatible_api():
@@ -124,6 +127,32 @@ def test_openai_client_passes_disabled_thinking_to_compatible_api():
     client.generate_json([LLMMessage(role="user", content="输出 JSON")])
 
     assert captured["extra_body"] == {"enable_thinking": False}
+
+
+def test_openai_client_clamps_timeout_to_shared_request_deadline():
+    captured: dict = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": "ok"}'))]
+        )
+
+    client = object.__new__(OpenAILLMClient)
+    client.settings = Settings(
+        _env_file=None,
+        llm_enabled=True,
+        openai_api_key="sk-test",
+        llm_timeout_seconds=30,
+    )
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    with deadline_budget(2):
+        client.generate_json([LLMMessage(role="user", content="输出 JSON")])
+
+    assert 0 < captured["timeout"] <= 2
 
 
 def test_fake_embedding_client_returns_predictable_vectors_and_records_calls():

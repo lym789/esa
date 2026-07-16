@@ -6,6 +6,7 @@ from typing import Any, Protocol, Sequence
 from app.core.config import Settings, get_settings
 from app.services.llm_client import PLACEHOLDER_API_KEYS
 from app.services.resilience import ResilienceError, execute_resilient
+from app.services.deadline import remaining_timeout
 
 
 class EmbeddingClientError(RuntimeError):
@@ -81,6 +82,7 @@ class OpenAIEmbeddingClient:
             response = self._client.embeddings.create(
                 model=self.settings.embedding_model,
                 input=list(texts),
+                timeout=remaining_timeout(self.settings.llm_timeout_seconds),
             )
         except Exception as exc:  # noqa: BLE001
             raise EmbeddingClientError(f"Embedding call failed: {exc}") from exc

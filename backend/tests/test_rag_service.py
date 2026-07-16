@@ -1,6 +1,7 @@
 import json
 from typing import Optional
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -12,6 +13,7 @@ from app.models.document_department_acl import DocumentDepartmentACL
 from app.models.document_role_acl import DocumentRoleACL
 from app.models.user import User
 from app.services.embedding_client import FakeEmbeddingClient
+from app.services.deadline import DeadlineExceededError, deadline_budget
 from app.services.rag_service import (
     LOCAL_EMBEDDING_DIMENSIONS,
     cosine_similarity,
@@ -111,6 +113,15 @@ def test_embed_text_is_deterministic_and_normalized():
     assert first == second
     assert len(first) == LOCAL_EMBEDDING_DIMENSIONS
     assert abs(sum(value * value for value in first) - 1.0) < 0.000001
+
+
+def test_search_stops_before_retrieval_when_request_deadline_is_exhausted():
+    db = make_session()
+    add_document_with_chunk(db, "DEADLINE.md", "VPN deadline test")
+
+    with deadline_budget(0):
+        with pytest.raises(DeadlineExceededError, match="cache lookup"):
+            search(db, "VPN")
 
 
 def test_cosine_similarity_scores_related_text_higher():

@@ -35,6 +35,7 @@ from app.services.rag_ranking_service import (
 )
 from app.services.rag_security_service import detect_prompt_injection
 from app.services.resilience import execute_resilient
+from app.services.deadline import ensure_time_remaining
 from app.services.rag_runtime import (
     SearchDiagnostics,
     get_rag_revision,
@@ -628,6 +629,7 @@ def search_with_diagnostics(
         )
         runtime_metrics.observe(diagnostics, max_samples=active_settings.rag_metrics_max_samples)
         return SearchExecution([], diagnostics)
+    ensure_time_remaining("RAG cache lookup")
 
     threshold = 0.0 if similarity_threshold is None else similarity_threshold
     candidate_k = max(top_k, active_settings.rag_candidate_k)
@@ -678,6 +680,7 @@ def search_with_diagnostics(
     )
 
     dense_started = perf_counter()
+    ensure_time_remaining("dense retrieval")
     if db.get_bind().dialect.name == "postgresql":
         dense_results = _search_postgresql(
             db=db,
@@ -689,6 +692,7 @@ def search_with_diagnostics(
             settings=active_settings,
         )
         dense_ms = (perf_counter() - dense_started) * 1000
+        ensure_time_remaining("lexical retrieval")
         lexical_started = perf_counter()
         lexical_results = _search_lexical_postgresql(
             db=db,
@@ -708,6 +712,7 @@ def search_with_diagnostics(
             settings=active_settings,
         )
         dense_ms = (perf_counter() - dense_started) * 1000
+        ensure_time_remaining("lexical retrieval")
         lexical_started = perf_counter()
         lexical_results = _search_lexical_in_memory(
             db=db,
@@ -717,6 +722,7 @@ def search_with_diagnostics(
             conditions=conditions,
         )
     lexical_ms = (perf_counter() - lexical_started) * 1000
+    ensure_time_remaining("reranking and context assembly")
     ranking_started = perf_counter()
     results, reranker_fallback, filtered_injection_count = _fuse_rerank_and_select(
         query=normalized_query,

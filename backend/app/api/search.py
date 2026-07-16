@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
@@ -8,6 +8,7 @@ from app.schemas.search import SearchRequest, SearchResponse, SearchResultRead
 from app.services.rag_runtime import diagnostics_payload, runtime_metrics
 from app.services.rag_service import format_citations, search_with_diagnostics
 from app.services.resilience import resilience_registry
+from app.services.metrics_exporter import render_prometheus_metrics
 
 
 router = APIRouter()
@@ -21,6 +22,16 @@ def get_rag_runtime_metrics(
     payload = runtime_metrics.snapshot()
     payload["resilience"] = resilience_registry.snapshot()
     return payload
+
+
+@router.get("/metrics/prometheus")
+def get_rag_prometheus_metrics(
+    _current_user: User = Depends(require_roles(["admin"])),
+) -> Response:
+    return Response(
+        content=render_prometheus_metrics(),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @router.post("", response_model=SearchResponse)

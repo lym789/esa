@@ -2,11 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import approvals, auth, chat, dashboard, documents, search, tickets, traces
 from app.core.config import get_settings
 from app.db.init_db import init_db
 from app.db.session import check_database_connection
+from app.services.deadline import DeadlineExceededError, deadline_budget, ensure_time_remaining
 
 
 settings = get_settings()
@@ -32,6 +34,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_request_deadline(request, call_next):
+    try:
+        with deadline_budget(settings.request_deadline_seconds):
+            response = await call_next(request)
+            ensure_time_remaining("response completion")
+    except DeadlineExceededError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"detail": str(exc)},
+        )
+    response.headers["X-Request-Deadline-Ms"] = str(int(settings.request_deadline_seconds * 1000))
+    return response
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])

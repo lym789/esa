@@ -103,6 +103,7 @@ def test_authenticated_user_can_search_uploaded_chunks(tmp_path, monkeypatch):
     assert body["citations"] == ["[1] IT_VPN_FAQ.md，第 1 页，VPN 使用说明"]
     assert body["diagnostics"]["selected_count"] == 1
     assert "total" in body["diagnostics"]["timings_ms"]
+    assert response.headers["X-Request-Deadline-Ms"] == "30000"
 
 
 def test_rag_runtime_metrics_require_admin_and_report_cache_hits(tmp_path, monkeypatch):
@@ -137,6 +138,20 @@ def test_rag_runtime_metrics_require_admin_and_report_cache_hits(tmp_path, monke
     assert metrics.json()["retrieval_cache_hit_rate"] == 0.5
     assert metrics.json()["resilience"]["reranker:test-provider"]["successes"] == 1
 
+    prometheus = client.get(
+        "/api/search/metrics/prometheus",
+        headers=auth_header(admin_token),
+    )
+    prometheus_forbidden = client.get(
+        "/api/search/metrics/prometheus",
+        headers=auth_header(employee_token),
+    )
+    assert prometheus.status_code == 200
+    assert "text/plain" in prometheus.headers["content-type"]
+    assert "rag_retrieval_cache_hit_ratio 0.5" in prometheus.text
+    assert 'rag_component_circuit_state{component="reranker:test-provider",state="closed"} 1' in prometheus.text
+    assert prometheus_forbidden.status_code == 403
+
 
 def test_search_requires_authentication():
     reset_database()
@@ -145,3 +160,21 @@ def test_search_requires_authentication():
     response = client.post("/api/search", json={"query": "VPN", "top_k": 5})
 
     assert response.status_code == 401
+
+
+def test_search_returns_gateway_timeout_when_shared_deadline_is_exhausted(monkeypatch):
+    reset_database()
+    from app import main as main_module
+
+    client = TestClient(app)
+    token = login(client, "admin@example.com")
+    monkeypatch.setattr(main_module.settings, "request_deadline_seconds", 0.0)
+
+    response = client.post(
+        "/api/search",
+        headers=auth_header(token),
+        json={"query": "VPN", "top_k": 5},
+    )
+
+    assert response.status_code == 504
+    assert "deadline exceeded" in response.json()["detail"]

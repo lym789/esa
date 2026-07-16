@@ -6,6 +6,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 from app.core.config import Settings, get_settings
 from app.services.resilience import ResilienceError, execute_resilient
+from app.services.deadline import remaining_timeout
 
 
 PLACEHOLDER_API_KEYS = {"", "replace-with-your-key"}
@@ -145,6 +146,7 @@ class OpenAILLMClient:
             kwargs["extra_body"] = {
                 "enable_thinking": self.settings.llm_enable_thinking,
             }
+        kwargs["timeout"] = remaining_timeout(self.settings.llm_timeout_seconds)
 
         try:
             return self._client.chat.completions.create(**kwargs)

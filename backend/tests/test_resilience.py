@@ -145,3 +145,23 @@ def test_embedding_wrapper_has_independent_fast_failure():
 
     snapshot = resilience_registry.snapshot()
     assert snapshot[client.component]["state"] == "open"
+
+
+def test_invalid_request_is_observed_without_opening_provider_circuit():
+    class InvalidRequest(RuntimeError):
+        status_code = 400
+
+    guard = ComponentGuard(
+        failure_threshold=1,
+        recovery_seconds=30,
+        max_concurrency=1,
+        bulkhead_timeout_seconds=0,
+    )
+
+    with pytest.raises(InvalidRequest):
+        guard.execute(lambda: (_ for _ in ()).throw(InvalidRequest("bad input")))
+
+    snapshot = guard.snapshot()
+    assert snapshot["state"] == "closed"
+    assert snapshot["consecutive_failures"] == 0
+    assert snapshot["error_categories"] == {"invalid_request": 1}

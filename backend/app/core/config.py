@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_support_agent"
     frontend_origin: str = "http://localhost:3000"
+    request_deadline_seconds: float = Field(default=30.0, ge=0.1, le=600)
 
     jwt_secret_key: str = "replace-with-dev-secret"
     jwt_algorithm: str = "HS256"

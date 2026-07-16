@@ -1,0 +1,10 @@
+iteration	change	verification	result	notes
+0	Phase 5 resilience baseline	159 backend + 53 root + 1 PostgreSQL	baseline	component circuits and bulkheads active
+1	ContextVar shared deadline	deterministic clock and nesting tests	keep	downstream stages cannot extend request budget
+2	outbound timeout clamping	OpenAI client fixture	keep	model timeout limited by remaining request budget
+3	model error taxonomy	nine category fixtures	keep	retry and circuit policy explicit
+4	wrapped root-cause classification	chained 401 fixture	keep	provider HTTP cause retained through client wrapper
+5	circuit accounting correction	invalid request fault injection	keep	observed as error without opening provider circuit
+6	API deadline middleware	header and exhausted-budget API tests	keep	normal response advertises budget; exhausted request returns 504
+7	Prometheus text exporter	admin/employee API tests	keep	cache, latency, circuit, bulkhead and error categories exported
+8	full regression	167 backend + 53 root + 1 PostgreSQL	keep	all active tests passed; one opt-in backend test skipped in default run

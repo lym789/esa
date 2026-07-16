@@ -6,6 +6,7 @@ from time import monotonic
 from typing import Any, Callable, TypeVar
 
 from app.core.config import Settings, get_settings
+from app.services.model_errors import classify_model_error
 
 
 T = TypeVar("T")
@@ -86,6 +87,13 @@ class CircuitBreaker:
                 self._opened_at = self._clock()
                 self._opened_count += 1
 
+    def record_ignored_failure(self) -> None:
+        with self._lock:
+            self._half_open_probe_active = False
+            if self._state == "half_open":
+                self._state = "open"
+                self._opened_at = self._clock()
+
     def snapshot(self) -> CircuitSnapshot:
         with self._lock:
             return CircuitSnapshot(
@@ -116,6 +124,7 @@ class ComponentGuard:
         self._successes = 0
         self._failures = 0
         self._bulkhead_rejections = 0
+        self._error_categories: dict[str, int] = {}
         self._in_flight = 0
         self._max_in_flight = 0
 
@@ -134,10 +143,16 @@ class ComponentGuard:
                 self._calls += 1
             try:
                 result = operation()
-            except Exception:
-                self.breaker.record_failure()
+            except Exception as exc:
+                classification = classify_model_error(exc)
+                if classification.counts_toward_circuit:
+                    self.breaker.record_failure()
+                else:
+                    self.breaker.record_ignored_failure()
                 with self._lock:
                     self._failures += 1
+                    category = classification.category.value
+                    self._error_categories[category] = self._error_categories.get(category, 0) + 1
                 raise
             self.breaker.record_success()
             with self._lock:
@@ -162,6 +177,7 @@ class ComponentGuard:
                 "bulkhead_rejections": self._bulkhead_rejections,
                 "in_flight": self._in_flight,
                 "max_in_flight": self._max_in_flight,
+                "error_categories": dict(self._error_categories),
             }
 
 
