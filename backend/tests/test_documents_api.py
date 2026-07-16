@@ -97,6 +97,29 @@ def test_employee_cannot_upload_document(tmp_path, monkeypatch):
     assert response.status_code == 403
 
 
+def test_admin_can_queue_async_document_upload(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    token = login(client, "admin@example.com")
+
+    response = client.post(
+        "/api/documents/upload-async",
+        headers=auth_header(token),
+        files={"file": ("async-policy.md", b"# Policy\nQueued content", "text/markdown")},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    assert response.json()["attempt_count"] == 0
+    status_response = client.get(
+        f"/api/documents/jobs/{response.json()['id']}",
+        headers=auth_header(token),
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["document_id"] == response.json()["document_id"]
+
+
 def test_upload_rejects_unsupported_file_type(tmp_path, monkeypatch):
     reset_database()
     configure_storage(tmp_path, monkeypatch)
@@ -191,3 +214,110 @@ def test_upload_creates_chunk_records_matching_document_count(tmp_path, monkeypa
     assert uploaded["status"] == "completed"
     assert uploaded["chunk_count"] == chunk_count
     assert chunk_count > 0
+
+
+def test_admin_can_update_document_governance(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    token = login(client, "admin@example.com")
+    document_id = upload_sample_document(client, token).json()["id"]
+
+    response = client.patch(
+        f"/api/documents/{document_id}/governance",
+        headers=auth_header(token),
+        json={
+            "publication_status": "published",
+            "knowledge_base_id": "finance",
+            "visibility": "restricted",
+            "classification": "confidential",
+            "allowed_roles": ["approver", "admin", "approver"],
+            "allowed_departments": ["finance", "finance"],
+            "effective_at": None,
+            "expires_at": None,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "document_id": document_id,
+        "publication_status": "published",
+        "knowledge_base_id": "finance",
+        "visibility": "restricted",
+        "classification": "confidential",
+        "allowed_roles": ["admin", "approver"],
+        "allowed_departments": ["finance"],
+        "effective_at": None,
+        "expires_at": None,
+    }
+
+
+def test_admin_can_list_document_versions_after_reindex(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    token = login(client, "admin@example.com")
+    uploaded = upload_sample_document(client, token).json()
+    client.post(f"/api/documents/{uploaded['id']}/reindex", headers=auth_header(token))
+
+    response = client.get(
+        f"/api/documents/{uploaded['id']}/versions",
+        headers=auth_header(token),
+    )
+
+    assert response.status_code == 200
+    assert [item["version_number"] for item in response.json()] == [2, 1]
+    assert [item["status"] for item in response.json()] == ["published", "retired"]
+
+
+def test_document_governance_requires_admin_and_restricted_roles(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    admin_token = login(client, "admin@example.com")
+    employee_token = login(client, "employee@example.com")
+    document_id = upload_sample_document(client, admin_token).json()["id"]
+    payload = {
+        "publication_status": "published",
+        "knowledge_base_id": "default",
+        "visibility": "restricted",
+        "allowed_roles": [],
+        "allowed_departments": [],
+    }
+
+    forbidden = client.patch(
+        f"/api/documents/{document_id}/governance",
+        headers=auth_header(employee_token),
+        json={**payload, "allowed_roles": ["employee"]},
+    )
+    invalid = client.patch(
+        f"/api/documents/{document_id}/governance",
+        headers=auth_header(admin_token),
+        json=payload,
+    )
+
+    assert forbidden.status_code == 403
+    assert invalid.status_code == 422
+
+
+def test_confidential_document_requires_restricted_visibility(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    token = login(client, "admin@example.com")
+    document_id = upload_sample_document(client, token).json()["id"]
+
+    response = client.patch(
+        f"/api/documents/{document_id}/governance",
+        headers=auth_header(token),
+        json={
+            "publication_status": "published",
+            "knowledge_base_id": "default",
+            "visibility": "authenticated",
+            "classification": "confidential",
+            "allowed_roles": [],
+            "allowed_departments": [],
+        },
+    )
+
+    assert response.status_code == 422

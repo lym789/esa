@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import approvals, auth, chat, documents, search, tickets, traces
+from app.api import approvals, auth, chat, dashboard, documents, search, tickets, traces
 from app.core.config import get_settings
 from app.db.init_db import init_db
 from app.db.session import check_database_connection
@@ -40,6 +40,7 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
 app.include_router(approvals.router, prefix="/api/approvals", tags=["approvals"])
 app.include_router(traces.router, prefix="/api/traces", tags=["traces"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 
 
 @app.get("/health")

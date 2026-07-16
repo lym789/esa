@@ -11,7 +11,6 @@ import {
   Settings,
   ShieldQuestion,
   Sparkles,
-  Sun,
   Ticket,
 } from "lucide-react";
 
@@ -29,39 +28,30 @@ export const navItems = [
   { label: "工单", icon: Ticket, href: "/tickets" },
   { label: "审批", icon: CheckSquare, href: "/approvals" },
   { label: "智能体追踪", icon: Gauge, href: "/admin/traces" },
-  { label: "数据分析", icon: BarChart3 },
-  { label: "系统集成", icon: Link2 },
+  { label: "数据分析", icon: BarChart3, href: "/analytics" },
+  { label: "系统集成", icon: Link2, href: "/integrations" },
   { label: "设置", icon: Settings, href: "/settings" },
-];
-
-export const sidebarActions = [
-  { label: "theme", ariaLabel: "切换主题", icon: Sun },
-  { label: "bell", ariaLabel: "通知", icon: Bell },
 ];
 
 export const stats = [
   {
+    key: "knowledge_articles",
     title: "知识文章",
-    value: "12,842",
-    delta: "↗ 较近 30 天增长 12.6%",
     icon: "/icons/knowledge-articles.png",
   },
   {
+    key: "open_tickets",
     title: "待处理工单",
-    value: "1,256",
-    delta: "↘ 较近 30 天下降 8.4%",
     icon: "/icons/open-tickets-stat.png",
   },
   {
+    key: "resolved_tickets",
     title: "已解决工单",
-    value: "8,932",
-    delta: "↗ 较近 30 天增长 18.7%",
     icon: "/icons/resolved-tickets-stat.png",
   },
   {
+    key: "average_resolution_hours",
     title: "平均解决时长",
-    value: "4.2h",
-    delta: "↘ 较近 30 天缩短 16.3%",
     icon: "/icons/avg-resolution-time.png",
   },
 ];
@@ -101,15 +91,17 @@ export const features: FeatureItem[] = [
     title: "数据分析",
     desc: "多维数据分析与洞察，驱动服务与业务持续优化。",
     icon: "/icons/analytics.png",
+    href: "/analytics",
   },
   {
     title: "系统集成",
     desc: "连接企业系统与第三方应用，打通数据与流程。",
     icon: "/icons/integrations.png",
+    href: "/integrations",
   },
   {
     title: "设置",
-    desc: "配置 AI 助手与系统策略，管理权限与安全。",
+    desc: "查看当前账号与服务配置，管理登录状态。",
     icon: "/icons/settings.png",
     href: "/settings",
   },

@@ -32,5 +32,5 @@ export default function HomePage() {
     );
   }
 
-  return <Dashboard currentUser={session.currentUser} />;
+  return <Dashboard currentUser={session.currentUser} accessToken={session.accessToken} />;
 }

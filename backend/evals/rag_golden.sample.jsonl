@@ -1,0 +1,6 @@
+{"case_id":"it-vpn-login","query":"VPN 登录失败应该怎么排查？","relevant_documents":["IT_VPN_FAQ.md"],"user_email":"employee@example.com","knowledge_base_id":"default"}
+{"case_id":"it-email-password","query":"公司邮箱密码忘记了怎么办？","relevant_documents":["IT_EMAIL_FAQ.md"],"user_email":"employee@example.com","knowledge_base_id":"default"}
+{"case_id":"hr-annual-leave","query":"年假需要提前多久申请？","relevant_documents":["HR_LEAVE_POLICY.md"],"user_email":"employee@example.com","knowledge_base_id":"default"}
+{"case_id":"finance-reimbursement","query":"差旅报销需要哪些凭证？","relevant_documents":["FINANCE_REIMBURSEMENT.md"],"user_email":"employee@example.com","knowledge_base_id":"default"}
+{"case_id":"admin-access-card","query":"门禁卡丢失后如何补办？","relevant_documents":["ADMIN_ACCESS_POLICY.md"],"user_email":"employee@example.com","knowledge_base_id":"default"}
+

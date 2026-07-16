@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.agent_trace import AgentTrace
 from app.models.user import User
+from app.services.security_redaction import redact_sensitive_text, redact_sensitive_value
 
 
 def now_ms(start: float) -> int:
@@ -15,7 +16,7 @@ def now_ms(start: float) -> int:
 
 
 def _dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    return json.dumps(redact_sensitive_value(value), ensure_ascii=False)
 
 
 def create_agent_trace(
@@ -39,16 +40,16 @@ def create_agent_trace(
         conversation_id=conversation_id,
         user_id=user.id,
         intent=intent,
-        user_input=user_input,
+        user_input=redact_sensitive_text(user_input) or "",
         intent_json=_dumps(intent_data or {}),
         retrieved_chunks_json=_dumps(retrieved_chunks or []),
-        llm_input_summary=llm_input_summary,
-        llm_output=llm_output,
+        llm_input_summary=redact_sensitive_text(llm_input_summary),
+        llm_output=redact_sensitive_text(llm_output),
         tool_name=tool_name,
         tool_args_json=_dumps(tool_args or {}),
         approval_status=approval_status,
         final_result_json=_dumps(final_result or {}),
-        error_message=error_message,
+        error_message=redact_sensitive_text(error_message),
         elapsed_ms=elapsed_ms,
     )
     db.add(trace)

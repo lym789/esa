@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronDown, HelpCircle, Search, ShieldCheck, Sparkles } from "lucide-react";
-import { features, navItems, sidebarActions, stats } from "@/lib/dashboard-data";
+import { Bell, HelpCircle, Loader2, Search, Sparkles } from "lucide-react";
+import { features, navItems, stats } from "@/lib/dashboard-data";
 import type { CurrentUser } from "@/lib/auth";
+import {
+  getDashboardOverview,
+  searchDashboard,
+  type DashboardOverview,
+  type DashboardSearchResult,
+} from "@/lib/dashboard";
 
 type Ripple = {
   id: number;
@@ -14,13 +20,7 @@ type Ripple = {
 
 type DashboardProps = {
   currentUser: CurrentUser;
-};
-
-const roleLabels: Record<CurrentUser["role"], string> = {
-  employee: "员工",
-  handler: "处理人",
-  approver: "审批人",
-  admin: "管理员",
+  accessToken: string;
 };
 
 const userNameLabels: Record<string, string> = {
@@ -39,11 +39,70 @@ function getInitials(name: string) {
     .join("");
 }
 
-export function Dashboard({ currentUser }: DashboardProps) {
+const searchKindLabels: Record<DashboardSearchResult["kind"], string> = {
+  knowledge: "知识",
+  document: "文档",
+  ticket: "工单",
+};
+
+export function Dashboard({ currentUser, accessToken }: DashboardProps) {
   const router = useRouter();
   const [ripples, setRipples] = useState<Ripple[]>([]);
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [overviewError, setOverviewError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<DashboardSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const displayName = userNameLabels[currentUser.email] ?? currentUser.name;
   const initials = getInitials(displayName) || currentUser.email.slice(0, 2).toUpperCase();
+  const liveStats = useMemo(
+    () => new Map(overview?.stats.map((item) => [item.key, item]) ?? []),
+    [overview],
+  );
+  const isAssistantOnline = Boolean(
+    overview?.status.backend === "online" && overview.status.database === "online" && overview.status.llm_configured,
+  );
+
+  useEffect(() => {
+    getDashboardOverview(accessToken)
+      .then(setOverview)
+      .catch((error) => setOverviewError(error instanceof Error ? error.message : "首页数据加载失败"));
+  }, [accessToken]);
+
+  useEffect(() => {
+    function onShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
+
+  async function onSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      setIsSearchOpen(true);
+      return;
+    }
+    setIsSearching(true);
+    setIsSearchOpen(true);
+    try {
+      setSearchResults(await searchDashboard(accessToken, query));
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : "搜索失败");
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }
 
   const onPageClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -77,10 +136,9 @@ export function Dashboard({ currentUser }: DashboardProps) {
       <section className="content-layer">
         <aside className="sidebar glass">
           <div className="logo-row">
-            <img src="/icons/logo.png" alt="JadeFlow AI 标志" className="logo-img" />
-            <h1 className="brand-text">JadeFlow AI</h1>
+            <img src="/icons/logo.png" alt="Midori 标志" className="logo-img" />
+            <h1 className="brand-text">Midori</h1>
           </div>
-          <div className="enterprise-pill">企业版</div>
 
           <nav className="nav">
             {navItems.map((item) => {
@@ -105,54 +163,106 @@ export function Dashboard({ currentUser }: DashboardProps) {
 
           <div className="user-area">
             <div className="avatar">{initials}</div>
-            <div>
-              <p className="m-0 text-sm font-semibold">{displayName}</p>
-              <p className="m-0 text-xs text-[#cce4d7]">{roleLabels[currentUser.role]}</p>
-            </div>
-            <ChevronDown className="ml-auto h-4 w-4" />
-          </div>
-
-          <div className="sidebar-actions">
-            {sidebarActions.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.label}
-                  className="sidebar-action"
-                  aria-label={item.ariaLabel}
-                >
-                  <Icon className="mx-auto h-5 w-5" />
-                </button>
-              );
-            })}
+            <p className="m-0 text-sm font-semibold">{displayName}</p>
           </div>
         </aside>
 
         <section className="main-area">
           <header className="topbar">
-            <div className="search-box glass">
-              <Search className="h-5 w-5" />
-              <span>搜索知识、工单、文档...</span>
-              <span className="ml-auto rounded-md bg-black/10 px-2 py-1 text-sm opacity-80">⌘ K</span>
+            <div className="search-area">
+              <form className="search-box glass" onSubmit={onSearch}>
+                {isSearching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onFocus={() => setIsSearchOpen(true)}
+                  placeholder="搜索知识、工单、文档..."
+                  aria-label="全局搜索"
+                />
+                <button type="submit" className="search-shortcut" aria-label="执行搜索">⌘ K</button>
+              </form>
+              {isSearchOpen ? (
+                <div className="search-results glass">
+                  {!searchQuery.trim() ? (
+                    <p>输入关键词后按回车搜索。</p>
+                  ) : isSearching ? (
+                    <p>正在搜索...</p>
+                  ) : searchResults.length === 0 ? (
+                    <p>没有找到匹配的知识、文档或工单。</p>
+                  ) : (
+                    searchResults.map((result, index) => (
+                      <button
+                        type="button"
+                        key={`${result.kind}-${result.href}-${index}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          router.push(result.href);
+                        }}
+                      >
+                        <span>{searchKindLabels[result.kind]}</span>
+                        <strong>{result.title}</strong>
+                        <small>{result.snippet}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="top-spacer" />
 
-            <div className="top-chip glass">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#45ef75]" />
-              AI 助手在线
+            <div className={`top-chip glass ${isAssistantOnline ? "" : "offline"}`} title={overviewError || undefined}>
+              <span className={`h-2.5 w-2.5 rounded-full ${isAssistantOnline ? "bg-[#45ef75]" : "bg-[#f0b45d]"}`} />
+              {overview ? (isAssistantOnline ? "AI 助手在线" : "AI 服务未就绪") : "正在检测服务"}
             </div>
 
-            <button className="top-chip notification-button glass" aria-label="帮助">
+            <button
+              className="top-chip notification-button glass"
+              aria-label="帮助"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push("/help");
+              }}
+            >
               <HelpCircle className="h-5 w-5" />
             </button>
 
-            <button className="top-chip notification-button glass relative" aria-label="通知">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[#7df2bd] text-[10px] font-bold text-[#07533f]">
-                3
-              </span>
-            </button>
+            <div className="notification-area">
+              <button
+                className="top-chip notification-button glass relative"
+                aria-label="通知"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsNotificationsOpen((current) => !current);
+                }}
+              >
+                <Bell className="h-5 w-5" />
+                {overview?.notifications.length ? (
+                  <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[#7df2bd] text-[10px] font-bold text-[#07533f]">
+                    {overview.notifications.length}
+                  </span>
+                ) : null}
+              </button>
+              {isNotificationsOpen ? (
+                <div className="notification-list glass">
+                  <strong>通知</strong>
+                  {overview?.notifications.length ? overview.notifications.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        router.push(item.href);
+                      }}
+                    >
+                      <span>{item.title}</span>
+                      <small>{item.message}</small>
+                    </button>
+                  )) : <p>当前没有待处理通知。</p>}
+                </div>
+              ) : null}
+            </div>
           </header>
 
           <section className="hero">
@@ -177,18 +287,25 @@ export function Dashboard({ currentUser }: DashboardProps) {
           </section>
 
           <section className="stats-grid">
-            {stats.map((item) => (
+            {stats.map((item) => {
+              const liveStat = liveStats.get(item.key);
+              const value = liveStat?.value;
+              const displayValue = item.key === "average_resolution_hours" && typeof value === "number"
+                ? `${value}h`
+                : value?.toLocaleString("zh-CN") ?? "—";
+              return (
               <article key={item.title} className="stat-card glass">
                 <div className="stat-inner">
                   <img src={item.icon} alt="" className="stat-icon" />
                   <div>
                     <p className="stat-title">{item.title}</p>
-                    <p className="stat-value">{item.value}</p>
-                    <p className="stat-delta">{item.delta}</p>
+                    <p className="stat-value">{displayValue}</p>
+                    <p className="stat-delta">{liveStat?.detail ?? "正在加载实时数据"}</p>
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </section>
 
           <section className="feature-grid">
@@ -215,11 +332,6 @@ export function Dashboard({ currentUser }: DashboardProps) {
             ))}
           </section>
 
-          <div className="bottom-notice glass">
-            <ShieldCheck className="h-4 w-4" />
-            <span>企业级安全防护 · 数据加密存储 · 权限精细控制 · 审计日志完整</span>
-            <span className="ml-auto">›</span>
-          </div>
         </section>
       </section>
     </main>

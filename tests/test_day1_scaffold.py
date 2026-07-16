@@ -89,7 +89,8 @@ class Day1ScaffoldTest(unittest.TestCase):
         self.assertIn("next", package_json["dependencies"])
         self.assertIn("react", package_json["dependencies"])
         self.assertIn("getStoredSession", page_tsx)
-        self.assertIn("JadeFlow AI", dashboard_tsx)
+        self.assertIn("Midori", dashboard_tsx)
+        self.assertIn("企业支持智能体", dashboard_tsx)
         self.assertIn("企业支持智能体", dashboard_tsx)
 
 

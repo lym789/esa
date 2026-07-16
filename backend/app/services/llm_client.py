@@ -140,6 +140,10 @@ class OpenAILLMClient:
             kwargs["max_tokens"] = max_tokens
         if response_format is not None:
             kwargs["response_format"] = response_format
+        if self.settings.llm_enable_thinking is not None:
+            kwargs["extra_body"] = {
+                "enable_thinking": self.settings.llm_enable_thinking,
+            }
 
         try:
             return self._client.chat.completions.create(**kwargs)

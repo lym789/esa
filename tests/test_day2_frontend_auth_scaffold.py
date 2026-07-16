@@ -50,7 +50,8 @@ class Day2FrontendAuthScaffoldTest(unittest.TestCase):
 
         self.assertIn("currentUser", dashboard_tsx)
         self.assertIn("currentUser.name", dashboard_tsx)
-        self.assertIn("currentUser.role", dashboard_tsx)
+        self.assertIn("currentUser.email", dashboard_tsx)
+        self.assertIn("displayName", dashboard_tsx)
         self.assertNotIn("Yunlong Li", dashboard_tsx)
 
     def test_login_page_offers_seed_accounts(self):

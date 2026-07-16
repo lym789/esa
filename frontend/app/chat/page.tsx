@@ -163,7 +163,7 @@ export default function ChatPage() {
         <header className="documents-header">
           <button className="documents-back" type="button" onClick={() => router.push("/")}>
             <ArrowLeft className="h-4 w-4" />
-            返回仪表盘
+            返回
           </button>
           <div>
             <p className="documents-kicker">知识库问答</p>

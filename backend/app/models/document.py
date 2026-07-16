@@ -14,6 +14,22 @@ class Document(Base):
     file_size = Column(Integer, nullable=False)
     storage_path = Column(String(500), unique=True, nullable=False)
     status = Column(String(32), index=True, nullable=False, default="pending")
+    publication_status = Column(
+        String(32), index=True, nullable=False, default="published", server_default="published"
+    )
+    knowledge_base_id = Column(
+        String(120), index=True, nullable=False, default="default", server_default="default"
+    )
+    visibility = Column(
+        String(32), index=True, nullable=False, default="authenticated", server_default="authenticated"
+    )
+    classification = Column(
+        String(32), index=True, nullable=False, default="internal", server_default="internal"
+    )
+    content_hash = Column(String(64), index=True, nullable=True)
+    current_version_id = Column(Integer, index=True, nullable=True)
+    effective_at = Column(DateTime(timezone=True), index=True, nullable=True)
+    expires_at = Column(DateTime(timezone=True), index=True, nullable=True)
     chunk_count = Column(Integer, nullable=False, default=0)
     error_message = Column(Text, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)

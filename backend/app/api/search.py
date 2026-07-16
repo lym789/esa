@@ -16,13 +16,15 @@ settings = get_settings()
 def search_chunks(
     payload: SearchRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> SearchResponse:
     results = search(
         db=db,
         query=payload.query,
         top_k=payload.top_k,
         similarity_threshold=settings.rag_similarity_threshold,
+        user=current_user,
+        knowledge_base_id=payload.knowledge_base_id,
     )
     return SearchResponse(
         query=payload.query,

@@ -1,0 +1,9 @@
+iteration	change	verification	result	notes
+1	claim-level citation validator	citation unit tests	keep	validates refs, numeric facts, term coverage and answerability
+2	structured RAG prompt and chat integration	chat and citation tests	keep	unsupported claims trigger safe fallback
+3	user prompt-injection guard	chat security test	keep	blocked before intent and retrieval
+4	knowledge chunk injection filter	rag service security test	keep	malicious chunks excluded before fusion and rerank
+5	recursive trace redaction	trace and redaction tests	keep	PII, keys, bearer tokens and sensitive fields masked
+6	department ACL and document classification	document and RAG tests	keep	role-or-department grants; confidential requires restricted visibility
+7	PostgreSQL migration 0005	local migration execution	keep	department ACL table and classification indexes applied
+8	full regression	144 backend + 53 root + 1 PostgreSQL	keep	all active tests passed; one opt-in backend test skipped in default run

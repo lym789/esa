@@ -56,3 +56,25 @@ def test_list_and_get_traces_return_newest_first():
     assert [trace.id for trace in traces] == [second.id, first.id]
     assert found is not None
     assert found.intent == "knowledge_qa"
+
+
+def test_create_agent_trace_redacts_pii_and_secrets():
+    db = make_session()
+    employee = make_user(db, "redaction@example.com", "employee")
+
+    trace = create_agent_trace(
+        db=db,
+        user=employee,
+        intent="knowledge_qa",
+        user_input="联系 me@example.com，手机 13812345678，密码=secret123",
+        tool_args={"authorization": "opaque", "api_key": "nonstandard-value"},
+        llm_output="请联系 me@example.com",
+    )
+
+    assert "me@example.com" not in trace.user_input
+    assert "13812345678" not in trace.user_input
+    assert "secret123" not in trace.user_input
+    assert "opaque" not in trace.tool_args_json
+    assert "nonstandard-value" not in trace.tool_args_json
+    assert "me@example.com" not in trace.llm_output
+    assert "REDACTED" in trace.user_input

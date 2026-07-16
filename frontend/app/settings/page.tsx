@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LogOut, Settings, ShieldCheck, UserCircle } from "lucide-react";
 
-import { clearSession, getStoredSession, type StoredSession } from "@/lib/session";
+import { getMe, type CurrentUser } from "@/lib/auth";
+import { clearSession, getStoredSession, saveSession, type StoredSession } from "@/lib/session";
 
 const roleLabels: Record<string, string> = {
   employee: "员工",
@@ -23,7 +24,9 @@ const userNameLabels: Record<string, string> = {
 export default function SettingsPage() {
   const router = useRouter();
   const [session, setSession] = useState<StoredSession | null>(null);
+  const [verifiedUser, setVerifiedUser] = useState<CurrentUser | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const storedSession = getStoredSession();
@@ -33,7 +36,13 @@ export default function SettingsPage() {
     }
 
     setSession(storedSession);
-    setIsChecking(false);
+    getMe(storedSession.accessToken)
+      .then((user) => {
+        setVerifiedUser(user);
+        saveSession({ ...storedSession, currentUser: user });
+      })
+      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "账号信息验证失败"))
+      .finally(() => setIsChecking(false));
   }, [router]);
 
   function onLogout() {
@@ -41,7 +50,7 @@ export default function SettingsPage() {
     router.replace("/login");
   }
 
-  const currentUser = session?.currentUser;
+  const currentUser = verifiedUser ?? session?.currentUser;
   const displayName = currentUser ? userNameLabels[currentUser.email] ?? currentUser.name : "正在检查登录状态";
 
   return (
@@ -54,7 +63,7 @@ export default function SettingsPage() {
         <header className="documents-header">
           <button className="documents-back" type="button" onClick={() => router.push("/")}>
             <ArrowLeft className="h-4 w-4" />
-            返回仪表盘
+            返回
           </button>
           <div>
             <p className="documents-kicker">系统设置</p>
@@ -89,8 +98,13 @@ export default function SettingsPage() {
                   <span>角色</span>
                   <strong>{roleLabels[currentUser.role] ?? currentUser.role}</strong>
                 </div>
+                <div>
+                  <span>数据来源</span>
+                  <strong>已通过账户 API 实时验证</strong>
+                </div>
               </div>
             )}
+            {error ? <p className="documents-error">{error}</p> : null}
           </article>
 
           <article className="settings-card glass">

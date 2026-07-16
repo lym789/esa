@@ -1,0 +1,9 @@
+iteration	change	verification	result	notes
+1	query normalization and follow-up rewriting	query and chat tests	keep	standalone questions preserved; follow-ups traced
+2	lexical retrieval with pg_trgm and SQLite fallback	hybrid retrieval tests	keep	exact ERR-1042 recovered without compatible dense model
+3	RRF fusion and pluggable reranker	ranking tests	keep	multi-route hits promoted; provider fallback safe
+4	MMR context selection, document quota, token budget	context selection tests	keep	quota and budget enforced
+5	cross-document exact-content deduplication	retrieval tests	keep	duplicate context collapsed
+6	PostgreSQL hybrid retrieval and ACL	transactional integration test	keep	pgvector + pg_trgm + ACL passed
+7	full regression	backend/root/compose/diff checks	keep	131 backend + 53 root passed
+

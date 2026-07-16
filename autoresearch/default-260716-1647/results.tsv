@@ -1,0 +1,7 @@
+iteration	change	verification	result	notes
+1	pgvector schema, migration runner, DB-side retrieval	targeted RAG tests	keep	25 passed
+2	golden-set metrics and ACL/publication filters	targeted RAG tests	keep	32 passed
+3	PostgreSQL migration and HNSW indexes	live local PostgreSQL inspection	keep	migration recorded; two HNSW indexes present
+4	PostgreSQL vector query with role ACL	transactional integration test	keep	1 passed; transaction rolled back
+5	document governance API and dashboard ACL	full backend suite	keep	111 passed; 1 opt-in integration test skipped
+

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: int = Field(default=30, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
+    llm_enable_thinking: Optional[bool] = None
     llm_enabled: bool = False
 
     storage_dir: str = "app/storage"
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     chunk_overlap: int = 120
     rag_top_k: int = 5
     rag_similarity_threshold: float = Field(default=0.75, ge=0, le=1)
+    rag_candidate_k: int = Field(default=30, ge=5, le=200)
+    rag_rrf_k: int = Field(default=60, ge=1, le=500)
+    rag_lexical_min_score: float = Field(default=0.05, ge=0, le=1)
+    rag_max_chunks_per_document: int = Field(default=3, ge=1, le=20)
+    rag_context_token_budget: int = Field(default=3000, ge=200, le=30000)
+    rag_mmr_lambda: float = Field(default=0.75, ge=0, le=1)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

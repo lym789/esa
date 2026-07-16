@@ -1,0 +1,8 @@
+iteration	change	verification	result	notes
+1	update obsolete frontend scaffold assertions	root scaffold suite	keep	53 passed
+2	boundary-aware Markdown chunking and heading paths	targeted ingestion tests	keep	semantic boundaries preserved
+3	batch embedding generation	targeted ingestion tests	keep	multiple chunks use one batch call
+4	document versions and atomic current-version switch	targeted processing tests	keep	failed reindex keeps prior published version
+5	version history API and PostgreSQL migration	full backend and pgvector integration	keep	116 passed; integration passed
+6	durable processing jobs and standalone worker	full regression and compose validation	keep	119 backend + 53 root + integration passed
+

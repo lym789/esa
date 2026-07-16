@@ -32,7 +32,8 @@ class Day16FrontendSettingsLogoutScaffoldTest(unittest.TestCase):
         self.assertIn('router.replace("/login")', settings_page)
         self.assertIn("退出登录", settings_page)
         self.assertIn("当前账号", settings_page)
-        self.assertIn("返回仪表盘", settings_page)
+        self.assertIn('router.push("/")', settings_page)
+        self.assertIn("返回", settings_page)
 
     def test_settings_page_has_styled_layout(self):
         css = read_text("frontend/app/globals.css")

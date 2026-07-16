@@ -16,12 +16,16 @@ from app.services.agent_intelligence_service import IntentDetection, RiskAssessm
 from app.services.embedding_client import EmbeddingClient
 from app.services.llm_client import LLMClient, LLMClientError, build_llm_client, is_llm_configured
 from app.services.prompt_templates import build_rag_answer_messages
+from app.services.rag_citation_service import Evidence, validate_claim_citations
+from app.services.rag_query_service import build_query_plan
 from app.services.rag_service import SearchResult, format_citations, search
+from app.services.rag_security_service import detect_prompt_injection
 from app.services.ticket_service import TicketDraft, generate_ticket_draft
 from app.services.trace_service import create_agent_trace, now_ms
 
 
 REFUSAL_MESSAGE = "我没有在当前知识库中找到可靠依据，暂时不能确认这个问题。你可以换个问法，或创建工单让相关部门处理。"
+SECURITY_REFUSAL_MESSAGE = "该请求包含可能改变系统规则或访问受保护信息的指令，系统已停止处理。"
 
 
 def create_conversation(db: Session, user: User, title: str | None = None) -> Conversation:
@@ -81,23 +85,28 @@ def _citation_index(value: Any) -> int | None:
     return None
 
 
-def _format_llm_answer(payload: dict[str, Any], citations: list[str]) -> tuple[str, list[str]]:
+def _format_llm_answer(
+    payload: dict[str, Any],
+    citations: list[str],
+    results: list[SearchResult],
+) -> tuple[str, list[str]]:
     answer = payload.get("answer")
-    raw_citations = payload.get("citations")
     if not isinstance(answer, str) or not answer.strip():
         raise LLMClientError("LLM RAG response must include a non-empty answer")
-    if not isinstance(raw_citations, list):
-        raise LLMClientError("LLM RAG response must include citations")
-
-    selected: list[str] = []
-    for raw_citation in raw_citations:
-        index = _citation_index(raw_citation)
-        if index is None or index < 1 or index > len(citations):
-            raise LLMClientError("LLM RAG response referenced an unknown citation")
-        citation = citations[index - 1]
-        if citation not in selected:
-            selected.append(citation)
-
+    evidence = [
+        Evidence(
+            index=index,
+            chunk_uid=str(result.metadata.get("chunk_uid") or f"chunk-{result.chunk_id}"),
+            content=result.content,
+        )
+        for index, result in enumerate(results, start=1)
+    ]
+    report = validate_claim_citations(payload, evidence)
+    if not report.valid:
+        raise LLMClientError(f"LLM claims failed evidence validation: {report.error}")
+    if report.answerability == "unanswerable":
+        return answer.strip(), []
+    selected = [citations[index - 1] for index in report.selected_indices]
     if not selected:
         raise LLMClientError("LLM RAG response must cite at least one source")
 
@@ -114,6 +123,10 @@ def _trace_chunk_payload(results: list[SearchResult]) -> list[dict[str, Any]]:
             "page": result.page,
             "section": result.section,
             "similarity": result.similarity,
+            "dense_score": result.dense_score,
+            "lexical_score": result.lexical_score,
+            "fusion_score": result.fusion_score,
+            "rerank_score": result.rerank_score,
             "content": result.content,
         }
         for index, result in enumerate(results, start=1)
@@ -138,7 +151,7 @@ def _build_llm_answer(
             retrieved_chunks=_trace_chunk_payload(results),
         )
     )
-    answer, selected_citations = _format_llm_answer(response.data, citations)
+    answer, selected_citations = _format_llm_answer(response.data, citations, results)
     return answer, selected_citations, response.data
 
 
@@ -218,7 +231,44 @@ def _create_ticket_draft_message(
     return assistant_message
 
 
-def _serialize_results(results: list[SearchResult]) -> str:
+def _create_security_refusal_message(
+    *,
+    db: Session,
+    conversation: Conversation,
+    user: User,
+    content: str,
+    reason: str,
+    trace_start: float,
+) -> Message:
+    assistant_message = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=SECURITY_REFUSAL_MESSAGE,
+        citations_json="[]",
+        metadata_json=json.dumps(
+            {"security": {"blocked": True, "category": "prompt_injection", "reason": reason}},
+            ensure_ascii=False,
+        ),
+    )
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message)
+    create_agent_trace(
+        db=db,
+        user=user,
+        conversation_id=conversation.id,
+        intent="security_refusal",
+        user_input=content,
+        intent_data={"intent": "security_refusal", "reason": reason},
+        tool_name="prompt_injection_guard",
+        approval_status="not_required",
+        final_result={"blocked": True, "message_id": assistant_message.id},
+        elapsed_ms=now_ms(trace_start),
+    )
+    return assistant_message
+
+
+def _serialize_results(results: list[SearchResult], query_plan: dict[str, Any]) -> str:
     payload = [
         {
             "chunk_id": result.chunk_id,
@@ -227,11 +277,15 @@ def _serialize_results(results: list[SearchResult]) -> str:
             "page": result.page,
             "section": result.section,
             "similarity": result.similarity,
+            "dense_score": result.dense_score,
+            "lexical_score": result.lexical_score,
+            "fusion_score": result.fusion_score,
+            "rerank_score": result.rerank_score,
             "metadata": result.metadata,
         }
         for result in results
     ]
-    return json.dumps({"results": payload}, ensure_ascii=False)
+    return json.dumps({"query_plan": query_plan, "results": payload}, ensure_ascii=False)
 
 
 def _trace_chunks(results: list[SearchResult]) -> list[dict]:
@@ -243,6 +297,10 @@ def _trace_chunks(results: list[SearchResult]) -> list[dict]:
             "page": result.page,
             "section": result.section,
             "similarity": result.similarity,
+            "dense_score": result.dense_score,
+            "lexical_score": result.lexical_score,
+            "fusion_score": result.fusion_score,
+            "rerank_score": result.rerank_score,
         }
         for result in results
     ]
@@ -260,6 +318,7 @@ def send_message(
 ) -> Message:
     trace_start = perf_counter()
     active_settings = settings or get_settings()
+    conversation_user = db.query(User).filter(User.id == conversation.user_id).one()
     user_message = Message(
         conversation_id=conversation.id,
         role="user",
@@ -269,6 +328,31 @@ def send_message(
     )
     db.add(user_message)
     db.commit()
+
+    previous_rows = (
+        db.query(Message.content)
+        .filter(
+            Message.conversation_id == conversation.id,
+            Message.role == "user",
+            Message.id != user_message.id,
+        )
+        .order_by(Message.id.desc())
+        .limit(3)
+        .all()
+    )
+    previous_user_messages = [content for (content,) in reversed(previous_rows)]
+    query_plan = build_query_plan(content, previous_user_messages)
+
+    security_finding = detect_prompt_injection(content)
+    if security_finding.blocked:
+        return _create_security_refusal_message(
+            db=db,
+            conversation=conversation,
+            user=conversation_user,
+            content=content,
+            reason=security_finding.reason or "prompt injection detected",
+            trace_start=trace_start,
+        )
 
     intent = detect_intent(content, llm_client=llm_client, settings=active_settings)
     if _should_route_to_ticket(intent):
@@ -286,11 +370,12 @@ def send_message(
 
     results = search(
         db=db,
-        query=content,
+        query=query_plan.retrieval_query,
         top_k=top_k,
         similarity_threshold=similarity_threshold,
         embedding_client=embedding_client,
         settings=active_settings,
+        user=conversation_user,
     )
     citations = format_citations(results)
     llm_error: str | None = None
@@ -320,17 +405,16 @@ def send_message(
         role="assistant",
         content=answer,
         citations_json=json.dumps(selected_citations, ensure_ascii=False),
-        metadata_json=_serialize_results(results),
+        metadata_json=_serialize_results(results, asdict(query_plan)),
     )
     db.add(assistant_message)
     db.add(conversation)
     db.commit()
     db.refresh(assistant_message)
 
-    user = db.query(User).filter(User.id == conversation.user_id).one()
     create_agent_trace(
         db=db,
-        user=user,
+        user=conversation_user,
         conversation_id=conversation.id,
         intent="knowledge_qa",
         user_input=content,
@@ -342,16 +426,26 @@ def send_message(
             "reason": "Chat 消息进入知识库问答流程",
         },
         retrieved_chunks=_trace_chunks(results),
-        llm_input_summary=f"query={content}; top_k={top_k}; threshold={similarity_threshold}",
+        llm_input_summary=(
+            f"query={content}; retrieval_query={query_plan.retrieval_query}; "
+            f"top_k={top_k}; threshold={similarity_threshold}"
+        ),
         llm_output=json.dumps(llm_payload, ensure_ascii=False) if llm_payload is not None else answer,
         tool_name="llm_rag_answer" if llm_used else "rag_search",
-        tool_args={"query": content, "top_k": top_k, "similarity_threshold": similarity_threshold},
+        tool_args={
+            "query": content,
+            "retrieval_query": query_plan.retrieval_query,
+            "query_rewritten": query_plan.rewritten,
+            "top_k": top_k,
+            "similarity_threshold": similarity_threshold,
+        },
         approval_status="not_required",
         final_result={
             "message_id": assistant_message.id,
             "citations": selected_citations,
             "has_sources": bool(results),
             "llm_used": llm_used,
+            "query_rewritten": query_plan.rewritten,
         },
         error_message=llm_error,
         elapsed_ms=now_ms(trace_start),

@@ -1,6 +1,14 @@
+from types import SimpleNamespace
+
 from app.core.config import Settings
 from app.services.embedding_client import FakeEmbeddingClient, is_embedding_configured
-from app.services.llm_client import FakeLLMClient, LLMClientError, LLMMessage, is_llm_configured
+from app.services.llm_client import (
+    FakeLLMClient,
+    LLMClientError,
+    LLMMessage,
+    OpenAILLMClient,
+    is_llm_configured,
+)
 from app.services.prompt_templates import (
     build_intent_detection_messages,
     build_rag_answer_messages,
@@ -19,6 +27,7 @@ def test_llm_settings_default_to_disabled_and_safe_values():
     assert settings.embedding_model == "text-embedding-3-small"
     assert settings.llm_timeout_seconds == 30
     assert settings.llm_max_retries == 2
+    assert settings.llm_enable_thinking is None
 
 
 def test_llm_and_embedding_configuration_require_enablement_and_real_key():
@@ -60,6 +69,56 @@ def test_fake_llm_client_can_raise_configured_error():
         assert "model unavailable" in str(exc)
     else:
         raise AssertionError("FakeLLMClient should raise the configured error")
+
+
+def test_openai_client_omits_thinking_parameter_when_not_configured():
+    captured: dict = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": "ok"}'))]
+        )
+
+    client = object.__new__(OpenAILLMClient)
+    client.settings = Settings(
+        _env_file=None,
+        llm_enabled=True,
+        openai_api_key="sk-test",
+        llm_enable_thinking=None,
+    )
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    client.generate_json([LLMMessage(role="user", content="输出 JSON")])
+
+    assert "extra_body" not in captured
+
+
+def test_openai_client_passes_disabled_thinking_to_compatible_api():
+    captured: dict = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": "ok"}'))]
+        )
+
+    client = object.__new__(OpenAILLMClient)
+    client.settings = Settings(
+        _env_file=None,
+        llm_enabled=True,
+        openai_api_key="sk-test",
+        llm_enable_thinking=False,
+    )
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    client.generate_json([LLMMessage(role="user", content="输出 JSON")])
+
+    assert captured["extra_body"] == {"enable_thinking": False}
 
 
 def test_fake_embedding_client_returns_predictable_vectors_and_records_calls():
