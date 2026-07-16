@@ -34,6 +34,7 @@ from app.services.rag_ranking_service import (
     select_context_ids,
 )
 from app.services.rag_security_service import detect_prompt_injection
+from app.services.resilience import execute_resilient
 from app.services.rag_runtime import (
     SearchDiagnostics,
     get_rag_revision,
@@ -564,7 +565,19 @@ def _fuse_rerank_and_select(
     active_reranker = reranker or HeuristicReranker()
     reranker_fallback = False
     try:
-        reranked = active_reranker.rerank(query, candidates)
+        if reranker is None:
+            reranked = active_reranker.rerank(query, candidates)
+        else:
+            component = (
+                f"reranker:{active_reranker.__class__.__module__}."
+                f"{active_reranker.__class__.__qualname__}"
+            )
+            reranked = execute_resilient(
+                component,
+                lambda: active_reranker.rerank(query, candidates),
+                settings=settings,
+                max_concurrency=settings.reranker_max_concurrency,
+            )
     except Exception:  # noqa: BLE001 - an optional provider must degrade safely
         reranker_fallback = True
         reranked = HeuristicReranker().rerank(query, candidates)

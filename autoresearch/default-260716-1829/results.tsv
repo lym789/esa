@@ -1,0 +1,9 @@
+iteration	change	verification	result	notes
+0	Phase 5 cache baseline	153 backend + 53 root + 1 PostgreSQL	baseline	secure cache and runtime diagnostics active
+1	thread-safe circuit breaker	open/fast-fail/half-open/recovery tests	keep	single recovery probe and deterministic state transitions
+2	component bulkhead	concurrency fault injection	keep	excess concurrency rejected without opening circuit
+3	LLM resilient wrapper	provider failure fixture	keep	delegate called only until threshold, then fast-fail
+4	embedding resilient wrapper	provider failure fixture	keep	independent embedding circuit opens and falls back upstream
+5	reranker resilient execution	three-search failure sequence	keep	two provider calls then circuit rejection; heuristic results preserved
+6	admin resilience metrics	metrics API authorization test	keep	component states and counters exposed only to admin
+7	full regression	159 backend + 53 root + 1 PostgreSQL	keep	all active tests passed; one opt-in backend test skipped in default run

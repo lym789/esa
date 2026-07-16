@@ -16,7 +16,8 @@
 - Phase 4 核心：claim 级引用校验、关键数字证据核验、Prompt Injection 拦截、Trace 敏感信息脱敏、部门 ACL 和文档密级已完成。
 - Phase 4 扩展：NLI/LLM Judge 校准、用户组 ACL、外部内容源信任分级待黄金集和组织目录接入后推进。
 - Phase 5 基础：ACL 安全的查询/检索缓存、持久化 revision 失效、分阶段指标、reranker 降级观测和本地容量基准已完成。
-- Phase 5 扩展：分组件熔断/限流、Redis、OpenTelemetry、生产规模压测、灰度与反馈闭环待后续迭代。
+- Phase 5 可靠性：LLM、Embedding、Reranker 独立熔断、半开恢复、并发舱壁和运行指标已完成。
+- Phase 5 扩展：分布式限流、Redis、OpenTelemetry、生产规模压测、灰度与反馈闭环待后续迭代。
 
 ## 1. 执行摘要
 

@@ -26,6 +26,7 @@ from app.services.rag_runtime import (
     reset_rag_runtime,
     runtime_metrics,
 )
+from app.services.resilience import resilience_registry
 from app.services.rag_ranking_service import RerankResult
 
 
@@ -292,6 +293,46 @@ def test_reranker_failure_is_visible_and_degrades_safely():
     assert execution.results
     assert execution.diagnostics.degraded_components == ("reranker",)
     assert runtime_metrics.snapshot()["counters"]["degraded_reranker"] == 1
+
+
+def test_reranker_circuit_fast_fails_after_threshold():
+    reset_rag_runtime()
+    db = make_session()
+    add_document_with_chunk(db, "RERANK_CIRCUIT.md", "VPN 熔断降级验证。")
+    settings = Settings(
+        _env_file=None,
+        model_circuit_failure_threshold=2,
+        model_circuit_recovery_seconds=30,
+    )
+
+    class CountingBrokenReranker:
+        def __init__(self):
+            self.calls = 0
+
+        def rerank(self, query, candidates):
+            del query, candidates
+            self.calls += 1
+            raise RuntimeError("provider unavailable")
+
+    reranker = CountingBrokenReranker()
+    executions = [
+        search_with_diagnostics(
+            db,
+            "VPN 熔断",
+            similarity_threshold=0.1,
+            reranker=reranker,
+            settings=settings,
+        )
+        for _ in range(3)
+    ]
+
+    component = f"reranker:{reranker.__class__.__module__}.{reranker.__class__.__qualname__}"
+    snapshot = resilience_registry.snapshot()[component]
+    assert reranker.calls == 2
+    assert all(execution.results for execution in executions)
+    assert all(execution.diagnostics.degraded_components == ("reranker",) for execution in executions)
+    assert snapshot["state"] == "open"
+    assert snapshot["circuit_rejections"] == 1
 
 
 def test_search_excludes_unpublished_documents_and_filters_knowledge_base():

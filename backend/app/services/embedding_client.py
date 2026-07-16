@@ -5,6 +5,7 @@ from typing import Any, Protocol, Sequence
 
 from app.core.config import Settings, get_settings
 from app.services.llm_client import PLACEHOLDER_API_KEYS
+from app.services.resilience import ResilienceError, execute_resilient
 
 
 class EmbeddingClientError(RuntimeError):
@@ -109,8 +110,34 @@ class FakeEmbeddingClient:
         return [self.embed_text(text) for text in texts]
 
 
+class ResilientEmbeddingClient:
+    def __init__(self, delegate: EmbeddingClient, settings: Settings) -> None:
+        self.delegate = delegate
+        self.settings = settings
+        self.component = f"embedding:{settings.llm_provider}:{settings.embedding_model}"
+
+    def _execute(self, operation):
+        try:
+            return execute_resilient(
+                self.component,
+                operation,
+                settings=self.settings,
+                max_concurrency=self.settings.embedding_max_concurrency,
+            )
+        except ResilienceError as exc:
+            raise EmbeddingClientError(
+                f"Embedding reliability guard rejected call: {exc}"
+            ) from exc
+
+    def embed_text(self, text: str) -> EmbeddingResponse:
+        return self._execute(lambda: self.delegate.embed_text(text))
+
+    def embed_texts(self, texts: Sequence[str]) -> list[EmbeddingResponse]:
+        return self._execute(lambda: self.delegate.embed_texts(texts))
+
+
 def build_embedding_client(settings: Settings | None = None) -> EmbeddingClient:
     active_settings = settings or get_settings()
     if is_embedding_configured(active_settings):
-        return OpenAIEmbeddingClient(active_settings)
+        return ResilientEmbeddingClient(OpenAIEmbeddingClient(active_settings), active_settings)
     return DisabledEmbeddingClient()

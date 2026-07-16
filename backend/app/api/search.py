@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.search import SearchRequest, SearchResponse, SearchResultRead
 from app.services.rag_runtime import diagnostics_payload, runtime_metrics
 from app.services.rag_service import format_citations, search_with_diagnostics
+from app.services.resilience import resilience_registry
 
 
 router = APIRouter()
@@ -17,7 +18,9 @@ settings = get_settings()
 def get_rag_runtime_metrics(
     _current_user: User = Depends(require_roles(["admin"])),
 ) -> dict:
-    return runtime_metrics.snapshot()
+    payload = runtime_metrics.snapshot()
+    payload["resilience"] = resilience_registry.snapshot()
+    return payload
 
 
 @router.post("", response_model=SearchResponse)

@@ -6,10 +6,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_db
+from app.core.config import Settings
 from app.db.base import Base
 from app.main import app
 from app.services.auth_service import seed_users
 from app.services.rag_runtime import reset_rag_runtime
+from app.services.resilience import resilience_registry
 
 
 engine = create_engine(
@@ -118,6 +120,12 @@ def test_rag_runtime_metrics_require_admin_and_report_cache_hits(tmp_path, monke
             json={"query": "VPN 缓存指标", "top_k": 5},
         )
         assert response.status_code == 200
+    resilience_registry.execute(
+        "reranker:test-provider",
+        lambda: "ok",
+        settings=Settings(_env_file=None),
+        max_concurrency=1,
+    )
 
     forbidden = client.get("/api/search/metrics", headers=auth_header(employee_token))
     metrics = client.get("/api/search/metrics", headers=auth_header(admin_token))
@@ -127,6 +135,7 @@ def test_rag_runtime_metrics_require_admin_and_report_cache_hits(tmp_path, monke
     assert metrics.json()["counters"]["searches"] == 2
     assert metrics.json()["counters"]["retrieval_cache_hits"] == 1
     assert metrics.json()["retrieval_cache_hit_rate"] == 0.5
+    assert metrics.json()["resilience"]["reranker:test-provider"]["successes"] == 1
 
 
 def test_search_requires_authentication():

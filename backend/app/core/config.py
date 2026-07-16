@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     rag_cache_ttl_seconds: int = Field(default=60, ge=1, le=3600)
     rag_cache_max_entries: int = Field(default=512, ge=10, le=10000)
     rag_metrics_max_samples: int = Field(default=1000, ge=100, le=100000)
+    model_circuit_failure_threshold: int = Field(default=5, ge=1, le=100)
+    model_circuit_recovery_seconds: float = Field(default=30.0, ge=0.1, le=3600)
+    model_bulkhead_timeout_seconds: float = Field(default=0.1, ge=0, le=60)
+    llm_max_concurrency: int = Field(default=20, ge=1, le=1000)
+    embedding_max_concurrency: int = Field(default=20, ge=1, le=1000)
+    reranker_max_concurrency: int = Field(default=20, ge=1, le=1000)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

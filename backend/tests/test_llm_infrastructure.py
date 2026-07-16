@@ -28,6 +28,11 @@ def test_llm_settings_default_to_disabled_and_safe_values():
     assert settings.llm_timeout_seconds == 30
     assert settings.llm_max_retries == 2
     assert settings.llm_enable_thinking is None
+    assert settings.model_circuit_failure_threshold == 5
+    assert settings.model_circuit_recovery_seconds == 30
+    assert settings.llm_max_concurrency == 20
+    assert settings.embedding_max_concurrency == 20
+    assert settings.reranker_max_concurrency == 20
 
 
 def test_llm_and_embedding_configuration_require_enablement_and_real_key():

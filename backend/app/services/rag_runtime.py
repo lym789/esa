@@ -175,9 +175,12 @@ def bump_rag_revision(db: Session) -> int:
 
 
 def reset_rag_runtime() -> None:
+    from app.services.resilience import resilience_registry
+
     retrieval_cache.reset()
     query_embedding_cache.reset()
     runtime_metrics.reset()
+    resilience_registry.reset()
 
 
 def diagnostics_payload(diagnostics: SearchDiagnostics) -> dict[str, Any]:

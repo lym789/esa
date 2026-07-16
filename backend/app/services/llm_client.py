@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol, Sequence
 
 from app.core.config import Settings, get_settings
+from app.services.resilience import ResilienceError, execute_resilient
 
 
 PLACEHOLDER_API_KEYS = {"", "replace-with-your-key"}
@@ -249,8 +250,56 @@ class FakeLLMClient:
         return LLMJSONResponse(data=self.json_response, model=self.model, raw={"fake": True})
 
 
+class ResilientLLMClient:
+    def __init__(self, delegate: LLMClient, settings: Settings) -> None:
+        self.delegate = delegate
+        self.settings = settings
+        self.component = f"llm:{settings.llm_provider}:{settings.llm_model}"
+
+    def _execute(self, operation):
+        try:
+            return execute_resilient(
+                self.component,
+                operation,
+                settings=self.settings,
+                max_concurrency=self.settings.llm_max_concurrency,
+            )
+        except ResilienceError as exc:
+            raise LLMClientError(f"LLM reliability guard rejected call: {exc}") from exc
+
+    def generate_text(
+        self,
+        messages: Sequence[LLMMessage | Mapping[str, str]],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+    ) -> LLMTextResponse:
+        return self._execute(
+            lambda: self.delegate.generate_text(
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        )
+
+    def generate_json(
+        self,
+        messages: Sequence[LLMMessage | Mapping[str, str]],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> LLMJSONResponse:
+        return self._execute(
+            lambda: self.delegate.generate_json(
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        )
+
+
 def build_llm_client(settings: Settings | None = None) -> LLMClient:
     active_settings = settings or get_settings()
     if is_llm_configured(active_settings):
-        return OpenAILLMClient(active_settings)
+        return ResilientLLMClient(OpenAILLMClient(active_settings), active_settings)
     return DisabledLLMClient()
