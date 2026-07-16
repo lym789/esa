@@ -1,0 +1,10 @@
+iteration	change	verification	result	notes
+0	Phase 4 baseline	144 backend + 53 root + 1 PostgreSQL	baseline	all active tests passed; one opt-in test skipped by default
+1	bounded TTL/LRU cache primitive	TTL, eviction and defensive-copy tests	keep	bounded memory and immutable cached values
+2	ACL-scoped retrieval cache	user and department isolation tests	keep	cross-scope cache leakage 0
+3	query embedding cache	normalized-query reuse test	keep	same model/query vector reused safely across retrieval variants
+4	persistent RAG revision	mutation invalidation test	keep	stale result after document status change 0
+5	search diagnostics and runtime metrics	API authorization and metric tests	keep	stage latency, candidates, cache and degradation observable
+6	reranker degradation visibility	failing provider fixture	keep	heuristic fallback succeeds and degraded_reranker increments
+7	local capacity benchmark	200 docs / 40 queries / 8 unique	keep	80% hit; cold P95 22.311ms; warm P95 0.137ms; 313.42 QPS
+8	Phase 5 full regression	153 backend + 53 root + 1 PostgreSQL	keep	all active tests passed; one opt-in backend test skipped in default run

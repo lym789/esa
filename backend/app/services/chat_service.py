@@ -18,7 +18,8 @@ from app.services.llm_client import LLMClient, LLMClientError, build_llm_client,
 from app.services.prompt_templates import build_rag_answer_messages
 from app.services.rag_citation_service import Evidence, validate_claim_citations
 from app.services.rag_query_service import build_query_plan
-from app.services.rag_service import SearchResult, format_citations, search
+from app.services.rag_runtime import diagnostics_payload
+from app.services.rag_service import SearchResult, format_citations, search_with_diagnostics
 from app.services.rag_security_service import detect_prompt_injection
 from app.services.ticket_service import TicketDraft, generate_ticket_draft
 from app.services.trace_service import create_agent_trace, now_ms
@@ -268,7 +269,11 @@ def _create_security_refusal_message(
     return assistant_message
 
 
-def _serialize_results(results: list[SearchResult], query_plan: dict[str, Any]) -> str:
+def _serialize_results(
+    results: list[SearchResult],
+    query_plan: dict[str, Any],
+    search_diagnostics: dict[str, Any],
+) -> str:
     payload = [
         {
             "chunk_id": result.chunk_id,
@@ -285,7 +290,14 @@ def _serialize_results(results: list[SearchResult], query_plan: dict[str, Any]) 
         }
         for result in results
     ]
-    return json.dumps({"query_plan": query_plan, "results": payload}, ensure_ascii=False)
+    return json.dumps(
+        {
+            "query_plan": query_plan,
+            "search_diagnostics": search_diagnostics,
+            "results": payload,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _trace_chunks(results: list[SearchResult]) -> list[dict]:
@@ -368,7 +380,7 @@ def send_message(
             trace_start=trace_start,
         )
 
-    results = search(
+    search_execution = search_with_diagnostics(
         db=db,
         query=query_plan.retrieval_query,
         top_k=top_k,
@@ -377,6 +389,8 @@ def send_message(
         settings=active_settings,
         user=conversation_user,
     )
+    results = search_execution.results
+    search_diagnostics = diagnostics_payload(search_execution.diagnostics)
     citations = format_citations(results)
     llm_error: str | None = None
     llm_payload: dict[str, Any] | None = None
@@ -405,7 +419,7 @@ def send_message(
         role="assistant",
         content=answer,
         citations_json=json.dumps(selected_citations, ensure_ascii=False),
-        metadata_json=_serialize_results(results, asdict(query_plan)),
+        metadata_json=_serialize_results(results, asdict(query_plan), search_diagnostics),
     )
     db.add(assistant_message)
     db.add(conversation)
@@ -438,6 +452,7 @@ def send_message(
             "query_rewritten": query_plan.rewritten,
             "top_k": top_k,
             "similarity_threshold": similarity_threshold,
+            "search_diagnostics": search_diagnostics,
         },
         approval_status="not_required",
         final_result={
@@ -446,6 +461,7 @@ def send_message(
             "has_sources": bool(results),
             "llm_used": llm_used,
             "query_rewritten": query_plan.rewritten,
+            "search_diagnostics": search_diagnostics,
         },
         error_message=llm_error,
         elapsed_ms=now_ms(trace_start),

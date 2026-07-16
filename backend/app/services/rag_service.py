@@ -6,6 +6,7 @@ import math
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
@@ -33,6 +34,13 @@ from app.services.rag_ranking_service import (
     select_context_ids,
 )
 from app.services.rag_security_service import detect_prompt_injection
+from app.services.rag_runtime import (
+    SearchDiagnostics,
+    get_rag_revision,
+    query_embedding_cache,
+    retrieval_cache,
+    runtime_metrics,
+)
 
 
 LOCAL_EMBEDDING_MODEL = "local-hash-v1"
@@ -53,6 +61,12 @@ class SearchResult:
     lexical_score: float = 0.0
     fusion_score: float = 0.0
     rerank_score: float = 0.0
+
+
+@dataclass(frozen=True)
+class SearchExecution:
+    results: list[SearchResult]
+    diagnostics: SearchDiagnostics
 
 
 @dataclass(frozen=True)
@@ -175,13 +189,39 @@ def _query_embeddings_for_models(
     settings: Settings | None = None,
 ) -> dict[str, list[float]]:
     embeddings: dict[str, list[float]] = {}
-    if LOCAL_EMBEDDING_MODEL in target_models:
-        embeddings[LOCAL_EMBEDDING_MODEL] = embed_text(query)
-
     active_settings = settings or get_settings()
+    use_cache = active_settings.rag_cache_enabled and embedding_client is None
+
+    def cached_embedding(model: str) -> list[float] | None:
+        if not use_cache:
+            return None
+        value = query_embedding_cache.get((model, normalize_query(query)))
+        return [float(item) for item in value] if value is not None else None
+
+    def cache_embedding(model: str, vector: list[float]) -> None:
+        if use_cache:
+            query_embedding_cache.set(
+                (model, normalize_query(query)),
+                vector,
+                ttl_seconds=active_settings.rag_cache_ttl_seconds,
+                max_entries=active_settings.rag_cache_max_entries,
+            )
+
+    if LOCAL_EMBEDDING_MODEL in target_models:
+        local_cached = cached_embedding(LOCAL_EMBEDDING_MODEL)
+        if local_cached is None:
+            local_cached = embed_text(query)
+            cache_embedding(LOCAL_EMBEDDING_MODEL, local_cached)
+        embeddings[LOCAL_EMBEDDING_MODEL] = local_cached
+
     if active_settings.embedding_model not in target_models:
         return embeddings
     if not is_embedding_configured(active_settings):
+        return embeddings
+
+    remote_cached = cached_embedding(active_settings.embedding_model)
+    if remote_cached is not None:
+        embeddings[active_settings.embedding_model] = remote_cached
         return embeddings
 
     try:
@@ -191,6 +231,7 @@ def _query_embeddings_for_models(
         return embeddings
 
     embeddings[response.model] = response.vector
+    cache_embedding(response.model, response.vector)
     return embeddings
 
 
@@ -475,11 +516,14 @@ def _fuse_rerank_and_select(
     top_k: int,
     settings: Settings,
     reranker: Reranker | None,
-) -> list[SearchResult]:
+) -> tuple[list[SearchResult], bool, int]:
+    original_candidate_ids = {result.chunk_id for result in [*dense_results, *lexical_results]}
     dense_results = [result for result in dense_results if not detect_prompt_injection(result.content).blocked]
     lexical_results = [
         result for result in lexical_results if not detect_prompt_injection(result.content).blocked
     ]
+    safe_candidate_ids = {result.chunk_id for result in [*dense_results, *lexical_results]}
+    filtered_injection_count = len(original_candidate_ids - safe_candidate_ids)
     by_id = {result.chunk_id: result for result in [*dense_results, *lexical_results]}
     dense_scores = {result.chunk_id: result.dense_score for result in dense_results}
     lexical_scores = {result.chunk_id: result.lexical_score for result in lexical_results}
@@ -518,9 +562,11 @@ def _fuse_rerank_and_select(
             deduplicated[fingerprint] = candidate
     candidates = list(deduplicated.values())
     active_reranker = reranker or HeuristicReranker()
+    reranker_fallback = False
     try:
         reranked = active_reranker.rerank(query, candidates)
     except Exception:  # noqa: BLE001 - an optional provider must degrade safely
+        reranker_fallback = True
         reranked = HeuristicReranker().rerank(query, candidates)
     rerank_scores = {item.chunk_id: item.score for item in reranked if item.chunk_id in by_id}
     ranked_candidates = sorted(
@@ -535,7 +581,7 @@ def _fuse_rerank_and_select(
         max_chunks_per_document=settings.rag_max_chunks_per_document,
         mmr_lambda=settings.rag_mmr_lambda,
     )
-    return [
+    results = [
         replace(
             by_id[chunk_id],
             similarity=max(dense_scores.get(chunk_id, 0.0), lexical_scores.get(chunk_id, 0.0)),
@@ -546,9 +592,10 @@ def _fuse_rerank_and_select(
         )
         for chunk_id in selected_ids
     ]
+    return results, reranker_fallback, filtered_injection_count
 
 
-def search(
+def search_with_diagnostics(
     db: Session,
     query: str,
     top_k: int = 5,
@@ -558,19 +605,66 @@ def search(
     user: User | None = None,
     knowledge_base_id: str | None = None,
     reranker: Reranker | None = None,
-) -> list[SearchResult]:
+) -> SearchExecution:
+    total_started = perf_counter()
     normalized_query = normalize_query(query)
-    if not normalized_query or top_k <= 0:
-        return []
-
     active_settings = settings or get_settings()
+    if not normalized_query or top_k <= 0:
+        diagnostics = SearchDiagnostics(
+            timings_ms={"total": round((perf_counter() - total_started) * 1000, 3)}
+        )
+        runtime_metrics.observe(diagnostics, max_samples=active_settings.rag_metrics_max_samples)
+        return SearchExecution([], diagnostics)
+
     threshold = 0.0 if similarity_threshold is None else similarity_threshold
     candidate_k = max(top_k, active_settings.rag_candidate_k)
+    cache_allowed = (
+        active_settings.rag_cache_enabled
+        and embedding_client is None
+        and reranker is None
+    )
+    revision = get_rag_revision(db)
+    user_scope = (
+        user.id if user is not None else None,
+        user.role if user is not None else None,
+        user.department_id if user is not None else None,
+    )
+    cache_key = (
+        id(db.get_bind()),
+        revision,
+        normalized_query,
+        top_k,
+        threshold,
+        knowledge_base_id,
+        user_scope,
+        active_settings.embedding_model,
+        active_settings.rag_candidate_k,
+        active_settings.rag_rrf_k,
+        active_settings.rag_lexical_min_score,
+        active_settings.rag_max_chunks_per_document,
+        active_settings.rag_context_token_budget,
+        active_settings.rag_mmr_lambda,
+    )
+    if cache_allowed:
+        cached_results = retrieval_cache.get(cache_key)
+        if cached_results is not None:
+            diagnostics = SearchDiagnostics(
+                cache_hit=True,
+                selected_count=len(cached_results),
+                timings_ms={"total": round((perf_counter() - total_started) * 1000, 3)},
+            )
+            runtime_metrics.observe(
+                diagnostics,
+                max_samples=active_settings.rag_metrics_max_samples,
+            )
+            return SearchExecution(cached_results, diagnostics)
+
     conditions = document_access_conditions(
         user=user,
         knowledge_base_id=knowledge_base_id,
     )
 
+    dense_started = perf_counter()
     if db.get_bind().dialect.name == "postgresql":
         dense_results = _search_postgresql(
             db=db,
@@ -581,6 +675,8 @@ def search(
             embedding_client=embedding_client,
             settings=active_settings,
         )
+        dense_ms = (perf_counter() - dense_started) * 1000
+        lexical_started = perf_counter()
         lexical_results = _search_lexical_postgresql(
             db=db,
             query=normalized_query,
@@ -598,6 +694,8 @@ def search(
             embedding_client=embedding_client,
             settings=active_settings,
         )
+        dense_ms = (perf_counter() - dense_started) * 1000
+        lexical_started = perf_counter()
         lexical_results = _search_lexical_in_memory(
             db=db,
             query=normalized_query,
@@ -605,7 +703,9 @@ def search(
             min_score=active_settings.rag_lexical_min_score,
             conditions=conditions,
         )
-    return _fuse_rerank_and_select(
+    lexical_ms = (perf_counter() - lexical_started) * 1000
+    ranking_started = perf_counter()
+    results, reranker_fallback, filtered_injection_count = _fuse_rerank_and_select(
         query=normalized_query,
         dense_results=dense_results,
         lexical_results=lexical_results,
@@ -613,6 +713,53 @@ def search(
         settings=active_settings,
         reranker=reranker,
     )
+    ranking_ms = (perf_counter() - ranking_started) * 1000
+    diagnostics = SearchDiagnostics(
+        dense_candidates=len(dense_results),
+        lexical_candidates=len(lexical_results),
+        selected_count=len(results),
+        filtered_injection_count=filtered_injection_count,
+        degraded_components=("reranker",) if reranker_fallback else (),
+        timings_ms={
+            "dense_retrieval": round(dense_ms, 3),
+            "lexical_retrieval": round(lexical_ms, 3),
+            "ranking_context": round(ranking_ms, 3),
+            "total": round((perf_counter() - total_started) * 1000, 3),
+        },
+    )
+    if cache_allowed:
+        retrieval_cache.set(
+            cache_key,
+            results,
+            ttl_seconds=active_settings.rag_cache_ttl_seconds,
+            max_entries=active_settings.rag_cache_max_entries,
+        )
+    runtime_metrics.observe(diagnostics, max_samples=active_settings.rag_metrics_max_samples)
+    return SearchExecution(results, diagnostics)
+
+
+def search(
+    db: Session,
+    query: str,
+    top_k: int = 5,
+    similarity_threshold: float | None = None,
+    embedding_client: EmbeddingClient | None = None,
+    settings: Settings | None = None,
+    user: User | None = None,
+    knowledge_base_id: str | None = None,
+    reranker: Reranker | None = None,
+) -> list[SearchResult]:
+    return search_with_diagnostics(
+        db=db,
+        query=query,
+        top_k=top_k,
+        similarity_threshold=similarity_threshold,
+        embedding_client=embedding_client,
+        settings=settings,
+        user=user,
+        knowledge_base_id=knowledge_base_id,
+        reranker=reranker,
+    ).results
 
 
 def format_citations(results: list[SearchResult]) -> list[str]:

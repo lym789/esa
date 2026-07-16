@@ -7,6 +7,7 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.document_department_acl import DocumentDepartmentACL
 from app.models.message import Message
+from app.models.rag_index_state import RAGIndexState
 from app.models.ticket import Ticket
 from app.models.ticket_comment import TicketComment
 from app.models.user import User
@@ -19,6 +20,7 @@ __all__ = [
     "DocumentChunk",
     "DocumentDepartmentACL",
     "Message",
+    "RAGIndexState",
     "Ticket",
     "TicketComment",
     "User",

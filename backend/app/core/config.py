@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     rag_max_chunks_per_document: int = Field(default=3, ge=1, le=20)
     rag_context_token_budget: int = Field(default=3000, ge=200, le=30000)
     rag_mmr_lambda: float = Field(default=0.75, ge=0, le=1)
+    rag_cache_enabled: bool = True
+    rag_cache_ttl_seconds: int = Field(default=60, ge=1, le=3600)
+    rag_cache_max_entries: int = Field(default=512, ge=10, le=10000)
+    rag_metrics_max_samples: int = Field(default=1000, ge=100, le=100000)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401
     document_role_acl,
     document_version,
     message,
+    rag_index_state,
     ticket,
     ticket_comment,
     user,

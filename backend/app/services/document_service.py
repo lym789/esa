@@ -14,6 +14,7 @@ from app.models.document_processing_job import DocumentProcessingJob
 from app.models.document_role_acl import DocumentRoleACL
 from app.models.document_version import DocumentVersion
 from app.models.user import User
+from app.services.rag_runtime import bump_rag_revision
 
 
 ALLOWED_DOCUMENT_EXTENSIONS = {".md", ".txt", ".pdf"}
@@ -125,6 +126,7 @@ def delete_document(db: Session, document: Document, storage_dir: str) -> None:
     ).delete()
     db.query(DocumentVersion).filter(DocumentVersion.document_id == document.id).delete()
     db.delete(document)
+    bump_rag_revision(db)
     db.commit()
 
 
@@ -195,6 +197,7 @@ def update_document_governance(
             )
         )
     db.add(document)
+    bump_rag_revision(db)
     db.commit()
     db.refresh(document)
     return document

@@ -18,6 +18,13 @@ from app.services.rag_service import (
     embed_text,
     format_citations,
     search,
+    search_with_diagnostics,
+)
+from app.services.rag_runtime import (
+    bump_rag_revision,
+    query_embedding_cache,
+    reset_rag_runtime,
+    runtime_metrics,
 )
 from app.services.rag_ranking_service import RerankResult
 
@@ -196,6 +203,95 @@ def test_search_enforces_restricted_document_department_acl():
 
     assert [result.document_name for result in finance_results] == ["FINANCE_DEPARTMENT.md"]
     assert hr_results == []
+
+
+def test_retrieval_cache_is_scoped_by_user_and_department():
+    reset_rag_runtime()
+    db = make_session()
+    chunk = add_document_with_chunk(db, "FINANCE_CACHE.md", "财务预算缓存隔离验证。")
+    document = db.query(Document).filter(Document.id == chunk.document_id).one()
+    document.visibility = "restricted"
+    db.add(DocumentDepartmentACL(document_id=document.id, department_id="finance"))
+    finance = User(
+        email="cache-finance@example.com",
+        name="Finance",
+        role="employee",
+        department_id="finance",
+        hashed_password="not-used",
+    )
+    hr = User(
+        email="cache-hr@example.com",
+        name="HR",
+        role="employee",
+        department_id="hr",
+        hashed_password="not-used",
+    )
+    db.add_all([document, finance, hr])
+    db.commit()
+
+    first = search_with_diagnostics(db, "财务预算缓存", similarity_threshold=0.1, user=finance)
+    second = search_with_diagnostics(db, "财务预算缓存", similarity_threshold=0.1, user=finance)
+    unauthorized = search_with_diagnostics(db, "财务预算缓存", similarity_threshold=0.1, user=hr)
+
+    assert first.diagnostics.cache_hit is False
+    assert second.diagnostics.cache_hit is True
+    assert [item.document_name for item in second.results] == ["FINANCE_CACHE.md"]
+    assert unauthorized.diagnostics.cache_hit is False
+    assert unauthorized.results == []
+
+
+def test_rag_revision_invalidates_cached_results_after_document_change():
+    reset_rag_runtime()
+    db = make_session()
+    chunk = add_document_with_chunk(db, "CACHE_REVISION.md", "缓存版本失效验证。")
+
+    first = search_with_diagnostics(db, "缓存版本失效", similarity_threshold=0.1)
+    cached = search_with_diagnostics(db, "缓存版本失效", similarity_threshold=0.1)
+    document = db.query(Document).filter(Document.id == chunk.document_id).one()
+    document.publication_status = "draft"
+    bump_rag_revision(db)
+    db.commit()
+    after_change = search_with_diagnostics(db, "缓存版本失效", similarity_threshold=0.1)
+
+    assert first.results
+    assert cached.diagnostics.cache_hit is True
+    assert after_change.diagnostics.cache_hit is False
+    assert after_change.results == []
+
+
+def test_query_embedding_cache_reuses_normalized_query_vector():
+    reset_rag_runtime()
+    db = make_session()
+    add_document_with_chunk(db, "QUERY_CACHE.md", "VPN 查询向量缓存验证。")
+
+    search_with_diagnostics(db, " VPN   查询缓存 ", top_k=1, similarity_threshold=0.1)
+    search_with_diagnostics(db, "VPN 查询缓存", top_k=2, similarity_threshold=0.1)
+
+    cache_snapshot = query_embedding_cache.snapshot()
+    assert cache_snapshot["hits"] >= 1
+    assert cache_snapshot["entries"] == 1
+
+
+def test_reranker_failure_is_visible_and_degrades_safely():
+    reset_rag_runtime()
+    db = make_session()
+    add_document_with_chunk(db, "RERANK_FALLBACK.md", "VPN 登录故障排查。")
+
+    class BrokenReranker:
+        def rerank(self, query, candidates):
+            del query, candidates
+            raise RuntimeError("provider unavailable")
+
+    execution = search_with_diagnostics(
+        db,
+        "VPN 登录",
+        similarity_threshold=0.1,
+        reranker=BrokenReranker(),
+    )
+
+    assert execution.results
+    assert execution.diagnostics.degraded_components == ("reranker",)
+    assert runtime_metrics.snapshot()["counters"]["degraded_reranker"] == 1
 
 
 def test_search_excludes_unpublished_documents_and_filters_knowledge_base():

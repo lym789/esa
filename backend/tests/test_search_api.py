@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.db.base import Base
 from app.main import app
 from app.services.auth_service import seed_users
+from app.services.rag_runtime import reset_rag_runtime
 
 
 engine = create_engine(
@@ -35,6 +36,7 @@ def reset_database():
     app.dependency_overrides[get_db] = override_get_db
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    reset_rag_runtime()
     db = TestingSessionLocal()
     try:
         seed_users(db)
@@ -97,6 +99,34 @@ def test_authenticated_user_can_search_uploaded_chunks(tmp_path, monkeypatch):
     assert body["results"][0]["similarity"] > 0.1
     assert "VPN" in body["results"][0]["content"]
     assert body["citations"] == ["[1] IT_VPN_FAQ.md，第 1 页，VPN 使用说明"]
+    assert body["diagnostics"]["selected_count"] == 1
+    assert "total" in body["diagnostics"]["timings_ms"]
+
+
+def test_rag_runtime_metrics_require_admin_and_report_cache_hits(tmp_path, monkeypatch):
+    reset_database()
+    configure_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    admin_token = login(client, "admin@example.com")
+    employee_token = login(client, "employee@example.com")
+    upload_markdown(client, admin_token, "CACHE.md", "# 缓存\nVPN 缓存指标验证。")
+
+    for _ in range(2):
+        response = client.post(
+            "/api/search",
+            headers=auth_header(employee_token),
+            json={"query": "VPN 缓存指标", "top_k": 5},
+        )
+        assert response.status_code == 200
+
+    forbidden = client.get("/api/search/metrics", headers=auth_header(employee_token))
+    metrics = client.get("/api/search/metrics", headers=auth_header(admin_token))
+
+    assert forbidden.status_code == 403
+    assert metrics.status_code == 200
+    assert metrics.json()["counters"]["searches"] == 2
+    assert metrics.json()["counters"]["retrieval_cache_hits"] == 1
+    assert metrics.json()["retrieval_cache_hit_rate"] == 0.5
 
 
 def test_search_requires_authentication():

@@ -28,3 +28,4 @@ class SearchResponse(BaseModel):
     query: str
     results: list[SearchResultRead]
     citations: list[str]
+    diagnostics: dict[str, Any]

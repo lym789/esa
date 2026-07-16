@@ -84,6 +84,13 @@ MIGRATIONS = (
             "CREATE INDEX IF NOT EXISTS ix_document_department_acls_department_id ON document_department_acls (department_id)",
         ),
     ),
+    Migration(
+        version="0006_rag_cache_revision",
+        statements=(
+            "CREATE TABLE IF NOT EXISTS rag_index_state (id INTEGER PRIMARY KEY, revision BIGINT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+            "INSERT INTO rag_index_state (id, revision) VALUES (1, 0) ON CONFLICT (id) DO NOTHING",
+        ),
+    ),
 )
 
 

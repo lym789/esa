@@ -16,6 +16,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.document_version import DocumentVersion
 from app.services.embedding_client import EmbeddingClient
 from app.services.rag_service import embed_texts_for_model
+from app.services.rag_runtime import bump_rag_revision
 
 
 PARSER_VERSION = "structured-parser-v2"
@@ -278,6 +279,7 @@ def process_document(
         document.error_message = None
         db.add(version)
         db.add(document)
+        bump_rag_revision(db)
         db.commit()
         db.refresh(document)
         return document
